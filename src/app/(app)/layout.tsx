@@ -4,11 +4,14 @@
  * Layout for every in-app route: toast provider, the persistent shell, and a
  * hydration gate.
  *
- * The gate matters for correctness, not just polish: demo state lives in
+ * The gate matters for correctness, not just polish: the cached state lives in
  * `localStorage`, which does not exist during the server render. Rendering the
  * same placeholder on the server and on the client's first paint avoids a
- * hydration mismatch, and real content appears once the persisted state has
- * been read.
+ * hydration mismatch, and real content appears once the cache has been read.
+ *
+ * Reading the cache is not the end of it. The shared copy on Supabase is the
+ * source of truth, so this layout also starts the sync engine, which replaces
+ * the cached state with the server's and keeps listening for other devices.
  */
 
 import * as React from "react";
@@ -27,6 +30,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
   const authSource = useDemoStore((s) => s.authSource);
   const restoreSession = useDemoStore((s) => s.restoreSession);
   const signOut = useDemoStore((s) => s.signOut);
+  const startSync = useDemoStore((s) => s.startSync);
   const router = useRouter();
   const pathname = usePathname();
   const role = useDemoStore((s) => s.activeRole);
@@ -54,6 +58,15 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       };
     }
   }, [hydrated, signedIn, authSource, restoreSession, signOut, router]);
+
+  // Join the shared workspace once we know who is signed in. Until this runs
+  // the app is showing whatever this browser last cached, which may be behind
+  // what another device has done. `startSync` is idempotent, so the extra runs
+  // this effect's dependencies cause are harmless.
+  React.useEffect(() => {
+    if (!hydrated || !signedIn) return;
+    void startSync();
+  }, [hydrated, signedIn, authSource, startSync]);
 
   if (!hydrated || !signedIn) return <BootPlaceholder />;
 

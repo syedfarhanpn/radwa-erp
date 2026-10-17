@@ -37,6 +37,7 @@ import {
 } from "@/store/useDemoStore";
 import { notificationsForRole, unreadNotificationCount } from "@/store/selectors";
 import { Avatar, Badge, Breadcrumbs, EmptyState } from "@/components/ui/primitives";
+import { SyncIndicator } from "./SyncIndicator";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/form";
@@ -224,6 +225,7 @@ function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
         </div>
 
         <GlobalSearch />
+        <SyncIndicator />
         <NotificationBell />
         <UserMenu />
       </div>

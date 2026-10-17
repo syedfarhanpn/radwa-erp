@@ -76,12 +76,16 @@ Everything else — enquiries, BOQs, bid packages, surveys, work orders and the
 activity trail — is created through the UI as you demonstrate. Enquiry
 numbering starts at `ENQ-<year>-0001` and work orders at `WO-<year>-0001`.
 
-State is persisted to `localStorage` under the key `radwa-erp-demo`, so a demo
-survives a page refresh.
+State is shared through Supabase, so a change made on one device appears on
+every other. It is also cached in `localStorage` under the key
+`radwa-erp-demo` for an instant first paint, but the server copy is what wins
+on load. The topbar indicator says which of the two you are looking at — see
+section 6.
 
-**Reset** from the role menu (top right) → *Clear all enquiries*, or from
-**Demo Controls** in the sidebar. Reset discards every enquiry and workflow
-record created in the browser and keeps the people and client lists.
+**Reset** from the user menu (top right) → *Clear all enquiries*. Reset
+discards every enquiry and workflow record and keeps the people and client
+lists. Like any other change it is uploaded, so it clears **every** device, not
+just the one you ran it on.
 
 If the entity shape changes, bump `SCHEMA_VERSION` in `src/data/seed.ts`;
 persisted state from an older version is discarded rather than half-migrated.
@@ -242,17 +246,18 @@ Starting from an empty system:
 ---
 ## 6. Supabase
 
-**Sign-in is connected to Supabase.** The workflow data is not — enquiries,
-BOQs, bid packages and the rest still live in `localStorage`. Migrating those
-28 collections to Postgres is the next piece of work, and the repository seam
-in `src/services/repository.ts` is where it plugs in.
+**Sign-in and the workflow data are both connected to Supabase.** The data is
+stored as one shared JSON document rather than 28 normalised tables — see
+*How sync works* below for why, and what that costs.
 
 ### One-time setup
 
-1. **Run the migration.** Supabase Dashboard → SQL Editor → New query → paste
-   `supabase/migrations/0001_auth_profiles.sql` → Run. It creates the
-   `profiles` table, its row-level security policies, and the eighteen demo
-   accounts. It is safe to re-run.
+1. **Run both migrations, in order.** Supabase Dashboard → SQL Editor → New
+   query → paste → Run. Both are safe to re-run.
+   - `supabase/migrations/0001_auth_profiles.sql` — the `profiles` table, its
+     row-level security policies, and the eighteen accounts.
+   - `supabase/migrations/0002_workspace_sync.sql` — the shared workspace
+     document and the compare-and-swap writer that guards it.
 2. **Turn off email confirmation.** Dashboard → Authentication → Providers →
    Email → uncheck *Confirm email*. The seeded accounts cannot sign in while
    it is on.
@@ -262,8 +267,11 @@ in `src/services/repository.ts` is where it plugs in.
    ```
 
 Until step 1 is done Supabase has no accounts to match, so every sign-in falls
-through to the built-in demo accounts in `src/data/auth.ts` — same usernames,
-same password, no Supabase round-trip. See *Fallback behaviour* below.
+through to the built-in accounts in `src/data/auth.ts` — same usernames, same
+password, no Supabase round-trip. **A local sign-in cannot sync**: row-level
+security refuses an anonymous writer, so the topbar will read *This device
+only* and changes will stay in that browser. Running the migrations is what
+turns sync on.
 
 ### Environment
 
@@ -282,6 +290,41 @@ the database password or a service-role key in this app** — anything prefixed
 `NEXT_PUBLIC_` is compiled into the JavaScript bundle and is readable by
 anyone who opens it.
 
+### How sync works
+
+The whole workflow database is one row in `workspace_state`, as `jsonb`.
+
+That shape is deliberate. The app already treats its database as a single
+value — `dispatch` clones it, applies one pure operation, and commits all of it
+or none of it. One document mirrors that exactly, so the sync layer is a single
+save/load seam rather than 28 sets of CRUD and foreign keys.
+
+**Writes are compare-and-swap, not last-write-wins.** `save_workspace()` accepts
+a write only if the caller holds the revision currently stored. A caller that
+has fallen behind gets the winner's document back, **replays its own unconfirmed
+operations against it**, and tries again. Because operations are pure functions
+of `(db, ctx, input)`, replaying is exact: two people working on different
+enquiries both keep their work. An operation that is genuinely invalid against
+the newer state — approving something another device just rejected — fails on
+replay and is reported in the sync indicator instead of being forced through.
+
+**Other devices are told, not polled.** A tiny `workspace_pulse` row carries the
+realtime notification; the document itself is never broadcast, because it is far
+too big to push to every tab on every change.
+
+**`localStorage` is now a cache, not the source of truth.** It still gives an
+instant first paint and keeps an offline demo readable, but on every load the
+server copy replaces it.
+
+Known limits, honestly:
+
+| Limit | Detail |
+| --- | --- |
+| One shared workspace | A single `'default'` row. There is no notion of separate companies or environments. |
+| Whole-document writes | Every change uploads the entire database. Fine at demo scale; it would need normalising long before it held years of records. |
+| Replay is bounded | Five attempts, then the change stays pending and is retried later rather than being dropped. |
+| First device wins initialisation | The server row starts empty; whichever device connects first uploads its copy. **Open the app first on the device that holds your existing work.** |
+
 ### How sign-in resolves a user
 
 1. `auth.signInWithPassword` establishes the Supabase session.
@@ -296,7 +339,7 @@ role and identity columns frozen.
 
 | Situation | What happens |
 | --- | --- |
-| Supabase not configured | Local demo accounts, stated on the sign-in screen |
+| Supabase not configured | Local accounts; sync off, shown as *This device only* |
 | Supabase unreachable / paused | Falls back to local accounts, and says so |
 | Supabase rejects the credentials | Falls back to the built-in demo accounts, which require the same username and the demo password; the sign-in message says so |
 | Wrong password | **Refused** by both stores — a bad password is not waved through |

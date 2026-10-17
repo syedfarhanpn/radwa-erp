@@ -1,21 +1,27 @@
 "use client";
 
 /**
- * Radwa Gulf and Co — demo state store.
+ * Radwa Gulf and Co — workflow state store.
  *
- * Holds the entire mock database plus the current demo identity (role + acting
- * user). Persisted to `localStorage` so a demo survives a page refresh, and
- * versioned so a change to the seed shape discards stale state instead of
- * half-migrating it.
+ * Holds the entire database plus the current identity (role + acting user).
+ *
+ * WHERE THE DATA LIVES
+ *   Supabase holds the shared copy — one JSON document, see
+ *   `supabase/migrations/0002_workspace_sync.sql`. `localStorage` is still
+ *   written, but only as a cache so a refresh paints instantly and an offline
+ *   demo keeps working; on every load the server copy wins. That is what makes
+ *   a change on one device show up on another.
  *
  * `dispatch` is the single write path: it clones the database, runs one
  * operation from `src/services/operations.ts` against the clone, and commits
  * only if the operation succeeded. A failed operation therefore cannot leave
- * partial state behind.
+ * partial state behind. Successful operations are also queued for upload, and
+ * remembered until the server confirms them, so a write is never lost to a
+ * race with another device — see the sync engine at the bottom of this file.
  *
- * SECURITY NOTE: the role switcher is a demonstration affordance, not
- * authentication or authorization. It performs no identity verification. The
- * production backend must enforce permissions server-side for every operation.
+ * SECURITY NOTE: the role attached to a session is a demonstration affordance,
+ * not authorization. The production backend must enforce permissions
+ * server-side for every operation.
  */
 
 import * as React from "react";
@@ -33,11 +39,16 @@ import {
   signInWithSupabase,
   signOutOfSupabase,
 } from "@/lib/supabase/auth";
+import {
+  pullWorkspace,
+  pushWorkspace,
+  subscribeToWorkspace,
+} from "@/lib/supabase/workspace";
 import { USER_IDS } from "@/data/people";
 import { recomputeAllStages, type OpContext } from "@/services/operations";
 import { scopeDatabaseForViewer } from "./visibility";
 
-/** Default acting user for each demo role. */
+/** Default acting user for each role. */
 export const DEFAULT_USER_FOR_ROLE: Record<DemoRole, Id> = {
   CRM_MANAGER: USER_IDS.crm,
   MD: USER_IDS.md,
@@ -46,6 +57,18 @@ export const DEFAULT_USER_FOR_ROLE: Record<DemoRole, Id> = {
   SURVEYOR: USER_IDS.surveyorMajid,
   DEPARTMENT_REVIEWER: USER_IDS.revTechnical,
 };
+
+/**
+ * What the sync indicator shows.
+ *
+ *  - `off`      — not syncing: Supabase unconfigured, or signed in with a
+ *                 built-in account, which is not a Supabase session.
+ *  - `synced`   — the server has everything this device has done.
+ *  - `syncing`  — an upload is in flight.
+ *  - `offline`  — the last attempt failed; pending changes are kept and retried.
+ *  - `blocked`  — something needs fixing (migration not run, policy refused).
+ */
+export type SyncStatus = "off" | "synced" | "syncing" | "offline" | "blocked";
 
 export interface DemoState {
   db: DemoDatabase;
@@ -56,18 +79,31 @@ export interface DemoState {
   signedIn: boolean;
   /**
    * How the current session was established.
-   *  - `supabase`: authenticated against the Supabase project.
-   *  - `local`: the built-in demo accounts, used when Supabase is not
-   *    configured or could not be reached. Surfaced in the UI so nobody
-   *    mistakes an offline demo for a live sign-in.
+   *  - `supabase`: authenticated against the Supabase project. Only these
+   *    sessions can sync, because row-level security refuses anyone else.
+   *  - `local`: the built-in accounts, used when Supabase is not configured or
+   *    could not be reached.
    */
   authSource: "supabase" | "local" | null;
 
-  /** Verify credentials against Supabase, falling back to the demo accounts. */
+  /** Revision of the shared document this device last agreed with. */
+  revision: number;
+  syncStatus: SyncStatus;
+  /** Explanation for `offline` / `blocked`, shown in the UI. */
+  syncMessage: string | null;
+  /** Count of local changes the server has not confirmed yet. */
+  pendingChanges: number;
+
+  /** Verify credentials against Supabase, falling back to the local accounts. */
   signIn: (username: string, password: string) => Promise<ActionResult>;
   /** Re-establish a Supabase session on page load. */
   restoreSession: () => Promise<boolean>;
   signOut: () => Promise<void>;
+
+  /** Start sharing: pull the server copy, then listen for other devices. */
+  startSync: () => Promise<void>;
+  /** Push anything still pending, now. Used by the "Retry" affordance. */
+  retrySync: () => Promise<void>;
 
   setRole: (role: DemoRole) => void;
   setActingUser: (userId: Id) => void;
@@ -110,6 +146,27 @@ function cloneDb(db: DemoDatabase): DemoDatabase {
   return JSON.parse(JSON.stringify(db)) as DemoDatabase;
 }
 
+/** Collections without which a stored document is not worth rendering. */
+const REQUIRED_COLLECTIONS: Array<keyof DemoDatabase> = [
+  "enquiries",
+  "users",
+  "bidPackageDocuments",
+  "sequences",
+];
+
+/**
+ * Is this value a database this build can render?
+ *
+ * Applied to anything arriving from outside the running app — persisted state
+ * written by an older build, or the shared document from Supabase. A document
+ * missing a collection is rejected rather than rendered half-empty.
+ */
+function isUsableDb(value: unknown): value is DemoDatabase {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DemoDatabase>;
+  return REQUIRED_COLLECTIONS.every((key) => candidate[key] !== undefined);
+}
+
 export const useDemoStore = create<DemoState>()(
   persist(
     (set, get) => ({
@@ -118,6 +175,10 @@ export const useDemoStore = create<DemoState>()(
       actingUserId: DEFAULT_USER_FOR_ROLE.CRM_MANAGER,
       signedIn: false,
       authSource: null,
+      revision: 0,
+      syncStatus: "off",
+      syncMessage: null,
+      pendingChanges: 0,
 
       signIn: async (username, password) => {
         if (isSupabaseConfigured) {
@@ -133,14 +194,14 @@ export const useDemoStore = create<DemoState>()(
             return { ok: true, message: `Signed in as ${outcome.profile.fullName}.` };
           }
 
-          // Supabase could not authenticate. Fall through to the built-in demo
+          // Supabase could not authenticate. Fall through to the built-in
           // accounts, which still require the correct demo password — a wrong
           // password is not waved through, it simply fails in both stores.
           //
           // TRADE-OFF: this means an account whose password was changed in
           // Supabase can still be opened with its original demo password. It
-          // exists so the app stays usable before the migration in
-          // `supabase/migrations` has been run, when no Supabase accounts
+          // exists so the app stays usable before the migrations in
+          // `supabase/migrations` have been run, when no Supabase accounts
           // exist at all. Delete this fallback once the real accounts are the
           // only ones that should work.
         }
@@ -157,7 +218,7 @@ export const useDemoStore = create<DemoState>()(
         return {
           ok: true,
           message: isSupabaseConfigured
-            ? "Supabase did not recognise that account — signed in with the built-in demo account instead."
+            ? "Supabase did not recognise that account — signed in locally, so this device will not sync."
             : "Signed in.",
         };
       },
@@ -176,11 +237,18 @@ export const useDemoStore = create<DemoState>()(
       },
 
       signOut: async () => {
+        // Anything not yet uploaded would be stranded on this device, so give
+        // it a last chance to land before the session goes away.
+        await flushNow();
+        stopSync();
         // Clear the Supabase session too, or a refresh would silently sign the
         // same person straight back in.
         if (get().authSource === "supabase") await signOutOfSupabase();
-        set({ signedIn: false, authSource: null });
+        set({ signedIn: false, authSource: null, syncStatus: "off", syncMessage: null });
       },
+
+      startSync: startSync,
+      retrySync: flushNow,
 
       setRole: (role) =>
         set({
@@ -191,15 +259,37 @@ export const useDemoStore = create<DemoState>()(
       setActingUser: (userId) => set({ actingUserId: userId }),
 
       // Clearing the records does not end the session — you stay signed in as
-      // whoever you were, which is what you want mid-demo.
-      resetDemo: () => set({ db: freshSeed() }),
+      // whoever you were, which is what you want mid-demo. The empty database
+      // is uploaded like any other change, so it clears on every device.
+      resetDemo: () => {
+        pending.length = 0;
+        set({ db: freshSeed(), pendingChanges: 0 });
+        void flushNow();
+      },
 
       dispatch: (op, input) => {
         const { db, activeRole, actingUserId } = get();
         const draft = cloneDb(db);
         const ctx: OpContext = { actorId: actingUserId, actorRole: activeRole };
         const result = op(draft, ctx, input);
-        if (result.ok) set({ db: draft });
+        if (!result.ok) return result;
+
+        set({ db: draft });
+
+        // Remembered, not just sent: if another device wrote first, this exact
+        // operation is replayed against their version rather than overwriting
+        // it. See `flush` below.
+        //
+        // Only worth remembering when there is somewhere to send it. Without a
+        // Supabase session nothing will ever drain this queue, so recording
+        // into it would grow without bound and show a pending count that can
+        // never reach zero.
+        if (canSync()) {
+          pending.push({ op: op as PendingOp["op"], input, ctx });
+          set({ pendingChanges: pending.length });
+          scheduleFlush();
+        }
+
         return result;
       },
     }),
@@ -216,15 +306,19 @@ export const useDemoStore = create<DemoState>()(
         actingUserId: state.actingUserId,
         signedIn: state.signedIn,
         authSource: state.authSource,
+        // Stored so a refresh resumes the conversation with the server at the
+        // right revision instead of pushing a stale one and bouncing.
+        revision: state.revision,
       }),
       // A persisted state from an older seed shape is discarded, not migrated:
-      // this is demo data, and a stale shape would produce misleading screens.
+      // a stale shape would produce misleading screens.
       migrate: () => ({
         db: freshSeed(),
         activeRole: "CRM_MANAGER" as DemoRole,
         actingUserId: DEFAULT_USER_FOR_ROLE.CRM_MANAGER,
         signedIn: false,
         authSource: null,
+        revision: 0,
       }),
       /**
        * Merge runs at hydration, before any component reads the store. A
@@ -233,24 +327,248 @@ export const useDemoStore = create<DemoState>()(
        */
       merge: (persisted, current) => {
         const incoming = (persisted ?? {}) as Partial<DemoState>;
-        const required: Array<keyof DemoDatabase> = [
-          "enquiries",
-          "users",
-          "bidPackageDocuments",
-          "sequences",
-        ];
-        const usable =
-          incoming.db && required.every((key) => incoming.db?.[key] !== undefined) ? incoming.db : undefined;
-
         return {
           ...current,
           ...incoming,
-          db: usable ?? freshSeed(),
+          db: isUsableDb(incoming.db) ? incoming.db : freshSeed(),
         };
       },
     },
   ),
 );
+
+/* ========================================================== sync engine === */
+
+/**
+ * The engine below turns "one device's localStorage" into "one shared
+ * document". Three jobs:
+ *
+ *   1. On start, adopt the server's copy — or upload ours if the server has
+ *      never been initialised.
+ *   2. After every successful operation, upload. Uploads are serialized and
+ *      debounced, so a burst of edits becomes one request.
+ *   3. When another device writes, pull their version and replay anything of
+ *      ours that has not landed yet.
+ *
+ * The replay in (3) is what makes this safe rather than last-write-wins.
+ * Operations are pure functions of `(db, ctx, input)`, so an operation that
+ * lost the race can simply be re-run against the winner's document. Two people
+ * working on different enquiries both keep their work; an operation that is
+ * genuinely invalid against the newer state (approving something already
+ * rejected elsewhere) fails on replay and is reported rather than forced
+ * through.
+ */
+
+interface PendingOp {
+  op: (db: DemoDatabase, ctx: OpContext, input: unknown) => ActionResult;
+  input: unknown;
+  ctx: OpContext;
+}
+
+/** Operations applied locally but not yet confirmed by the server. */
+const pending: PendingOp[] = [];
+
+/** Serializes uploads: two pushes must never be in flight at once. */
+let chain: Promise<void> = Promise.resolve();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let unsubscribe: (() => void) | null = null;
+let started = false;
+
+/** Syncing needs a real Supabase session; a local sign-in cannot write. */
+function canSync(): boolean {
+  const { authSource } = useDemoStore.getState();
+  return isSupabaseConfigured && authSource === "supabase";
+}
+
+function enqueue(task: () => Promise<void>): Promise<void> {
+  chain = chain.then(task, task);
+  return chain;
+}
+
+function scheduleFlush(): void {
+  if (!canSync()) return;
+  if (flushTimer) clearTimeout(flushTimer);
+  // Coalesce a burst of edits — filling in a BOQ is many dispatches a second —
+  // into a single upload.
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void enqueue(flush);
+  }, 400);
+}
+
+/** Upload now, skipping the debounce. */
+async function flushNow(): Promise<void> {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (!canSync()) return;
+  await enqueue(flush);
+}
+
+async function flush(): Promise<void> {
+  if (!canSync() || pending.length === 0) return;
+
+  const set = useDemoStore.setState;
+  set({ syncStatus: "syncing" });
+
+  // Bounded so a permanently losing race cannot spin forever.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { db, revision } = useDemoStore.getState();
+    const outcome = await pushWorkspace(db, revision);
+
+    if (outcome.status === "saved") {
+      // Everything applied locally is now on the server.
+      pending.length = 0;
+      set({
+        revision: outcome.revision,
+        syncStatus: "synced",
+        syncMessage: null,
+        pendingChanges: 0,
+      });
+      return;
+    }
+
+    if (outcome.status === "unavailable") {
+      // Changes stay in `pending` and go up on the next successful attempt.
+      set({
+        syncStatus: /migration|not set up|Supabase sign-in/i.test(outcome.message) ? "blocked" : "offline",
+        syncMessage: outcome.message,
+      });
+      return;
+    }
+
+    // Another device wrote first. Rebuild on top of their document.
+    const replayed = rebaseOnto(outcome.db, outcome.revision);
+    if (!replayed) return;
+  }
+
+  set({
+    syncStatus: "offline",
+    syncMessage: "Could not save after several attempts — still trying.",
+  });
+}
+
+/**
+ * Adopt the server's document and re-apply our unconfirmed operations to it.
+ *
+ * Returns false when nothing of ours survived and the caller should stop.
+ */
+function rebaseOnto(serverDb: DemoDatabase, serverRevision: number): boolean {
+  const set = useDemoStore.setState;
+
+  if (!isUsableDb(serverDb)) {
+    set({
+      syncStatus: "blocked",
+      syncMessage: "The shared workspace holds data this version cannot read.",
+    });
+    return false;
+  }
+
+  const draft = cloneDb(serverDb);
+  const survived: PendingOp[] = [];
+  const lost: string[] = [];
+
+  for (const item of pending) {
+    const result = item.op(draft, item.ctx, item.input);
+    if (result.ok) survived.push(item);
+    else lost.push(result.message ?? "A change could not be re-applied.");
+  }
+
+  pending.length = 0;
+  pending.push(...survived);
+
+  set({
+    db: draft,
+    revision: serverRevision,
+    pendingChanges: pending.length,
+    ...(lost.length > 0
+      ? {
+          syncStatus: "blocked" as SyncStatus,
+          // Only the first: a list of five variations on the same cause is
+          // noise, and the screen behind the indicator shows the real state.
+          syncMessage: `Someone else changed this first. ${lost[0]}`,
+        }
+      : {}),
+  });
+
+  return true;
+}
+
+/**
+ * Begin sharing this workspace.
+ *
+ * Called once the app knows who is signed in. Idempotent: calling it again
+ * while already running does nothing.
+ */
+async function startSync(): Promise<void> {
+  const set = useDemoStore.setState;
+
+  if (!canSync()) {
+    set({
+      syncStatus: "off",
+      syncMessage: isSupabaseConfigured
+        ? "Signed in with a built-in account — changes stay on this device."
+        : "Supabase is not configured — changes stay on this device.",
+    });
+    return;
+  }
+  if (started) return;
+  started = true;
+
+  set({ syncStatus: "syncing" });
+
+  const snapshot = await pullWorkspace();
+
+  if (!snapshot) {
+    set({
+      syncStatus: "blocked",
+      syncMessage: "Could not read the shared workspace — run supabase/migrations/0002_workspace_sync.sql.",
+    });
+    started = false;
+    return;
+  }
+
+  if (snapshot.db === null) {
+    // Nobody has initialised the shared copy yet. Seed it from this device,
+    // which is how existing work gets up from whichever browser holds it.
+    useDemoStore.setState({ revision: snapshot.revision });
+    const outcome = await pushWorkspace(useDemoStore.getState().db, snapshot.revision);
+    if (outcome.status === "saved") {
+      set({ revision: outcome.revision, syncStatus: "synced", syncMessage: null });
+    } else if (outcome.status === "stale") {
+      rebaseOnto(outcome.db, outcome.revision);
+      set({ syncStatus: "synced", syncMessage: null });
+    } else {
+      set({ syncStatus: "blocked", syncMessage: outcome.message });
+      started = false;
+      return;
+    }
+  } else {
+    // The server copy wins over whatever this browser cached. Anything this
+    // device did while offline is still in `pending` and is replayed on top.
+    rebaseOnto(snapshot.db, snapshot.revision);
+    if (pending.length > 0) await flush();
+    else set({ syncStatus: "synced", syncMessage: null });
+  }
+
+  unsubscribe?.();
+  unsubscribe = subscribeToWorkspace(() => {
+    void enqueue(async () => {
+      const incoming = await pullWorkspace();
+      if (!incoming?.db) return;
+      if (incoming.revision <= useDemoStore.getState().revision) return;
+      rebaseOnto(incoming.db, incoming.revision);
+      if (pending.length > 0) await flush();
+    });
+  });
+}
+
+function stopSync(): void {
+  unsubscribe?.();
+  unsubscribe = null;
+  started = false;
+}
 
 /* ------------------------------------------------------------- helpers --- */
 

@@ -26,7 +26,7 @@ src/
 │   └── api/           Future Laravel client + response adapters (stubs)
 │
 ├── store/         Demo state.
-│   ├── useDemoStore.ts  zustand + localStorage, single write path
+│   ├── useDemoStore.ts  zustand + Supabase sync (localStorage cache), single write path
 │   ├── visibility.ts    Per-role record scoping (Estimator / MCP)
 │   └── selectors.ts     Read models used by every screen
 │
@@ -240,7 +240,7 @@ no authorization. The backend must filter and authorize server-side.
 
 ## 7. Hydration
 
-Demo state lives in `localStorage`, which does not exist during the server
+Cached state lives in `localStorage`, which does not exist during the server
 render. `useHydrated()` reads the persist middleware through
 `useSyncExternalStore` — `false` on the server, `true` once rehydration
 finishes — and `app/(app)/layout.tsx` renders the same placeholder on both
