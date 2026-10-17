@@ -116,18 +116,37 @@ begin
       id, instance_id, aud, role, email,
       encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data,
-      created_at, updated_at
+      created_at, updated_at,
+      -- These must be empty strings, never NULL. Supabase's auth service reads
+      -- them into non-nullable Go strings; a NULL makes the row unreadable and
+      -- breaks sign-in for the ENTIRE project with
+      -- "Database error querying schema". See 0003_repair_auth_tokens.sql.
+      confirmation_token, recovery_token,
+      email_change, email_change_token_new,
+      phone_change, phone_change_token,
+      reauthentication_token
     ) values (
       v_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', v_email,
       extensions.crypt(p_password, extensions.gen_salt('bf')), now(),
       jsonb_build_object('provider', 'email', 'providers', array['email']),
       jsonb_build_object('full_name', p_full_name),
-      now(), now()
+      now(), now(),
+      '', '',
+      '', '',
+      '', '',
+      ''
     );
   else
     update auth.users
        set encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
            email_confirmed_at = coalesce(email_confirmed_at, now()),
+           confirmation_token = coalesce(confirmation_token, ''),
+           recovery_token     = coalesce(recovery_token, ''),
+           email_change       = coalesce(email_change, ''),
+           email_change_token_new = coalesce(email_change_token_new, ''),
+           phone_change       = coalesce(phone_change, ''),
+           phone_change_token = coalesce(phone_change_token, ''),
+           reauthentication_token = coalesce(reauthentication_token, ''),
            updated_at         = now()
      where id = v_id;
   end if;

@@ -181,6 +181,11 @@ export const useDemoStore = create<DemoState>()(
       pendingChanges: 0,
 
       signIn: async (username, password) => {
+        // Why Supabase refused, kept so the fallback can say something true.
+        // Reporting a broken auth service as "signed in locally" is how a
+        // server fault gets mistaken for a wrong password.
+        let supabaseFailure: string | null = null;
+
         if (isSupabaseConfigured) {
           const outcome = await signInWithSupabase(username, password);
 
@@ -204,6 +209,7 @@ export const useDemoStore = create<DemoState>()(
           // `supabase/migrations` have been run, when no Supabase accounts
           // exist at all. Delete this fallback once the real accounts are the
           // only ones that should work.
+          supabaseFailure = outcome.unavailable ? outcome.message : null;
         }
 
         const local = verifyCredentials(username, password);
@@ -215,6 +221,14 @@ export const useDemoStore = create<DemoState>()(
           activeRole: local.account.role,
           actingUserId: local.account.userId,
         });
+        if (supabaseFailure) {
+          // Supabase is configured and broken, not merely unfamiliar with this
+          // account. Say what is wrong, and say that nothing will sync until
+          // it is fixed — the sign-in itself succeeded, so nothing else will.
+          set({ syncStatus: "blocked", syncMessage: supabaseFailure });
+          return { ok: true, message: `Signed in locally — this device will not sync. ${supabaseFailure}` };
+        }
+
         return {
           ok: true,
           message: isSupabaseConfigured
@@ -505,6 +519,10 @@ async function startSync(): Promise<void> {
   const set = useDemoStore.setState;
 
   if (!canSync()) {
+    // `signIn` may already have recorded *why* Supabase was unusable — a
+    // server fault, say. That is a far more useful thing to show than the
+    // generic "built-in account" line, so it is not overwritten.
+    if (useDemoStore.getState().syncStatus === "blocked") return;
     set({
       syncStatus: "off",
       syncMessage: isSupabaseConfigured

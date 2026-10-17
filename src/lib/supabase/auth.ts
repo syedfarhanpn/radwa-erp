@@ -79,12 +79,24 @@ export async function signInWithSupabase(username: string, password: string): Pr
     // the first should fall back to the local accounts, the second should not.
     const unavailable =
       error.status === undefined || error.status === 0 || error.status >= 500 || error.name === "AuthRetryableFetchError";
+
+    if (!unavailable) {
+      return { ok: false, message: "That username and password do not match an account." };
+    }
+
+    // A 500 from the auth service is not "offline" and must not be reported as
+    // one. The usual cause is an unreadable row in `auth.users` — seeding it
+    // from SQL leaves token columns NULL, which GoTrue cannot scan, and every
+    // sign-in in the project then fails with "Database error querying schema".
+    // Saying so here is the difference between a one-line fix and an afternoon
+    // spent suspecting the password.
+    const schemaFault = /querying schema|unexpected_failure/i.test(error.message);
     return {
       ok: false,
-      unavailable,
-      message: unavailable
-        ? "Could not reach Supabase."
-        : "That username and password do not match an account.",
+      unavailable: true,
+      message: schemaFault
+        ? "Supabase auth returned a server error (\"Database error querying schema\"). Run supabase/migrations/0003_repair_auth_tokens.sql — seeded accounts left NULL token columns that break sign-in for the whole project."
+        : `Could not reach Supabase (${error.status ?? "network error"}).`,
     };
   }
 
