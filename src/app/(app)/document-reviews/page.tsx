@@ -21,7 +21,6 @@ import { documentReviewQueue, rejectedDocuments, userById } from "@/store/select
 import {
   Badge,
   Button,
-  Callout,
   EmptyState,
   Panel,
   PanelHeader,
@@ -59,12 +58,6 @@ export default function DocumentReviewsPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<ListChecks />}>
-        A rejection needs a clear reason <span className="font-semibold">and</span> corrective instructions —
-        both fields are enforced. An approval applies to the version you reviewed, not to the document for all
-        time.
-      </Callout>
-
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Department" htmlFor="review-dept" className="w-64">
           <Select

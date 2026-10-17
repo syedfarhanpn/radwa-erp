@@ -56,6 +56,7 @@ export const mockRepository: RadwaRepository = {
   setDocumentRequirement: bind(ops.setDocumentRequirement),
   removeBidDocument: bind(ops.removeBidDocument),
   submitDocumentForReview: bind(ops.submitDocumentForReview),
+  submitAllDraftDocuments: bind(ops.submitAllDraftDocuments),
   createDocumentVersion: bind(ops.createDocumentVersion),
   reviewDocument: bind(ops.reviewDocument),
   markDocumentsApproved: bind(ops.markDocumentsApproved),

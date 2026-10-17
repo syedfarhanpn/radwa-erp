@@ -181,6 +181,11 @@ data first so the seeded state matches.
       filters stack, tables scroll horizontally, nav collapses to a drawer
 - [x] Dialogs trap focus, close on Escape, restore focus, and lock background
       scroll
+- [x] **Text fields inside dialogs accept continuous typing.** Regression: the
+      focus-trap effect depended on the inline `onClose` prop, so it re-ran on
+      every render and moved focus back to the first element after each
+      keystroke — a field took exactly one character. Verified by typing 27
+      characters with focus checked after each one.
 - [x] Tabs implement the ARIA pattern with arrow-key navigation
 - [x] All form controls are label-associated with `aria-invalid` and
       `aria-describedby` on error

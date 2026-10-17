@@ -1632,6 +1632,69 @@ export function createDocumentVersion(
   );
 }
 
+/**
+ * Demo shortcut: submit every draft document in the package for review at once.
+ *
+ * Assembling a bid package means filling in a file name for each of ten or more
+ * documents before any of them reach a reviewer, which is tedious to sit
+ * through in a demonstration. This fills in placeholder file metadata and
+ * submits them all.
+ *
+ * Labelled as a shortcut in the UI and in the activity trail. It must not be
+ * carried into production — a real Estimator attaches the actual document.
+ */
+export function submitAllDraftDocuments(
+  db: DemoDatabase,
+  ctx: OpContext,
+  input: { packageId: Id },
+): ActionResult {
+  const pkg = db.bidPackages.find((p) => p.id === input.packageId);
+  if (!pkg) return fail("Bid package not found.");
+  const enquiry = enquiryOf(db, pkg.enquiryId);
+  if (!enquiry) return fail("Enquiry not found.");
+
+  const drafts = documentsOf(db, pkg.id).filter((doc) => currentVersion(doc)?.reviewStatus === "DRAFT");
+  if (drafts.length === 0) {
+    return fail("No documents are waiting to be submitted.");
+  }
+
+  const departments = new Set<string>();
+  for (const doc of drafts) {
+    const version = currentVersion(doc)!;
+    version.fileName =
+      version.fileName ||
+      `${doc.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${enquiry.reference}_rev${version.versionNo}.pdf`;
+    version.fileSizeLabel = version.fileSizeLabel === "—" ? "1.2 MB" : version.fileSizeLabel;
+    version.changeSummary = version.changeSummary || "Issued for departmental review. (Demo shortcut.)";
+    version.reviewStatus = "PENDING_REVIEW";
+    version.submittedAt = nowIso();
+    departments.add(doc.department);
+  }
+
+  logActivity(db, ctx, {
+    enquiryId: pkg.enquiryId,
+    action: "Bid package documents submitted for review",
+    detail: `${drafts.length} document(s) submitted to ${departments.size} department(s) using the demo shortcut.`,
+    entityType: "bidPackage",
+    entityId: pkg.id,
+  });
+  notify(
+    db,
+    "DEPARTMENT_REVIEWER",
+    "Documents awaiting your review",
+    `${enquiry.reference} — ${drafts.length} document(s) submitted.`,
+    enquiry.id,
+    "/document-reviews",
+  );
+
+  pkg.updatedAt = nowIso();
+  touch(db, pkg.enquiryId);
+  recomputeStage(db, pkg.enquiryId);
+  return ok(
+    `${drafts.length} document(s) submitted to ${departments.size} department(s). This is a demo shortcut — it does not replace attaching the real documents.`,
+  );
+}
+
 export function reviewDocument(
   db: DemoDatabase,
   ctx: OpContext,

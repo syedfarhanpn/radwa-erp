@@ -73,11 +73,6 @@ export default function EstimatesPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<FileStack />}>
-        The BOQ workspace shows simulated AI suggestions next to the estimator&rsquo;s confirmed figures. The AI
-        columns are sample data — no AI model is connected to this demo.
-      </Callout>
-
       {scopeNote ? (
         <Callout tone="info">{scopeNote}</Callout>
       ) : (

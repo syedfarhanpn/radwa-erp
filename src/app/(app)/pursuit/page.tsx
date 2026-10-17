@@ -5,11 +5,9 @@
 import * as React from "react";
 import { Scale } from "lucide-react";
 
-import { managementConfig } from "@/domain/config";
 import { evaluatePursuit } from "@/domain/rules";
 import { useDb } from "@/store/useDemoStore";
 import { enquiryDetail, pursuitQueue } from "@/store/selectors";
-import { Callout } from "@/components/ui/primitives";
 import { PursuitPanel } from "@/components/workflow/QualifyPanels";
 import { QueueLayout, useQueueSelection, type QueueEntry } from "@/components/workflow/QueueLayout";
 
@@ -41,11 +39,6 @@ export default function PursuitPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Scale />}>
-        The Management Team has exactly {managementConfig.managementTeamSize} members, one of whom is the MD. An
-        enquiry becomes void only when <span className="font-semibold">all three</span> reject it.
-      </Callout>
-
       <QueueLayout
         icon={<Scale />}
         title="Awaiting pursuit decision"

@@ -11,10 +11,8 @@
 import * as React from "react";
 import { ShieldCheck } from "lucide-react";
 
-import { estimateApprovalPolicy } from "@/domain/config";
 import { useActingUser, useActiveRole, useDb } from "@/store/useDemoStore";
 import { enquiryDetail, estimateApprovalQueue } from "@/store/selectors";
-import { Callout } from "@/components/ui/primitives";
 import { BoqReadOnlyTable, EstimateApprovalPanel } from "@/components/workflow/EstimatePanels";
 import { QueueLayout, useQueueSelection, type QueueEntry } from "@/components/workflow/QueueLayout";
 import { formatMoney } from "@/lib/money";
@@ -49,15 +47,6 @@ export default function EstimateApprovalsPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<ShieldCheck />}>
-        Required approvers: the MD
-        {estimateApprovalPolicy.requireResponsibleManager
-          ? ", and the Management Team member responsible for the enquiry"
-          : ""}
-        . Every listed approver must approve; a rejection requires a reason and returns the estimate to the
-        Estimator.
-      </Callout>
-
       {role === "MD" ? (
         <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-700">
           <input

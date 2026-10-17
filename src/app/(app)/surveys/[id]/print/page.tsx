@@ -18,7 +18,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 
-import { displayConfig } from "@/domain/config";
 import { formatProjectTypes } from "@/domain/enums";
 import type { SurveyChecklistItem } from "@/domain/types";
 import { formatDate } from "@/lib/dates";
@@ -95,9 +94,6 @@ export default function SurveyChecklistPrintPage() {
           </div>
         </header>
 
-        <p className="mt-3 rounded border border-warn-200 bg-warn-50 px-2.5 py-1.5 text-2xs text-warn-700">
-          {displayConfig.demoBannerText} — illustrative document produced by a frontend demonstration build.
-        </p>
 
         <section className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 text-xs">
           <Row label="Project" value={enquiry.projectTitle} />

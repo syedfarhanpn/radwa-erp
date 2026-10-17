@@ -27,6 +27,7 @@ import {
 import { formatMoney } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { canAccessPath } from "@/components/shell/navigation";
 import { useActiveRole, useDb, useUnscopedDb } from "@/store/useDemoStore";
 import { describeScope } from "@/store/visibility";
 import { enquiryDetail } from "@/store/selectors";
@@ -86,6 +87,12 @@ export default function EnquiryDetailPage() {
 
   const detail = enquiryDetail(db, params.id);
 
+  // Roles without the Enquiry Register are sent to their dashboard instead of
+  // a page they cannot open.
+  const hasRegister = canAccessPath("/enquiries", role);
+  const backHref = hasRegister ? "/enquiries" : "/dashboard";
+  const backLabel = hasRegister ? "Back to the enquiry register" : "Back to your dashboard";
+
   // The active tab lives in the URL, so deep links and the browser's back
   // button work without a second copy of the state to keep in sync.
   const requested = searchParams.get("tab");
@@ -107,9 +114,9 @@ export default function EnquiryDetailPage() {
       return (
         <Callout tone="warn" title="Not assigned to you">
           {describeScope(role) ?? "This enquiry is not in your assigned work."} Ask the CRM Manager to reassign
-          it, or switch role using the selector in the top-right corner.{" "}
-          <Link href="/enquiries" className="font-medium underline">
-            Back to the enquiry register
+          it, or sign in as the person it belongs to.{" "}
+          <Link href={backHref} className="font-medium underline">
+            {backLabel}
           </Link>
           .
         </Callout>
@@ -119,8 +126,8 @@ export default function EnquiryDetailPage() {
     return (
       <Callout tone="bad" title="Enquiry not found">
         This enquiry does not exist. It may have been removed by a reset.{" "}
-        <Link href="/enquiries" className="font-medium underline">
-          Back to the enquiry register
+        <Link href={backHref} className="font-medium underline">
+          {backLabel}
         </Link>
         .
       </Callout>
@@ -205,13 +212,15 @@ export default function EnquiryDetailPage() {
       {/* -------------------------------------------------------- header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link
-            href="/enquiries"
-            className="inline-flex items-center gap-1 text-2xs text-ink-500 hover:text-brand-600"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Enquiry register
-          </Link>
+          {canAccessPath("/enquiries", role) ? (
+            <Link
+              href="/enquiries"
+              className="inline-flex items-center gap-1 text-2xs text-ink-500 hover:text-brand-600"
+            >
+              <ArrowLeft className="size-3" aria-hidden />
+              Enquiry register
+            </Link>
+          ) : null}
           <h2 className="mt-1 flex flex-wrap items-center gap-2 text-base font-semibold text-ink-900">
             <span className="numeric text-brand-700">{enquiry.reference}</span>
             <span className="text-ink-300">—</span>

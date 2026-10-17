@@ -12,11 +12,10 @@ import * as React from "react";
 import Link from "next/link";
 import { Scale } from "lucide-react";
 
-import { finalBidApprovalPolicy } from "@/domain/config";
 import { formatMoney } from "@/lib/money";
 import { useActingUser, useActiveRole, useDb } from "@/store/useDemoStore";
 import { enquiryDetail, finalApprovalQueue, packageQueue, totalsFor } from "@/store/selectors";
-import { Badge, Callout, Panel, PanelHeader } from "@/components/ui/primitives";
+import { Badge, Panel, PanelHeader } from "@/components/ui/primitives";
 import { Table, TBody, TD, TH, THead, TR, TableWrap } from "@/components/ui/table";
 import { BoqReadOnlyTable } from "@/components/workflow/EstimatePanels";
 import { FinalApprovalPanel } from "@/components/workflow/FinalApprovalPanel";
@@ -63,10 +62,6 @@ export default function FinalApprovalsPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Scale />}>
-        {finalBidApprovalPolicy.note}
-      </Callout>
-
       {stale.length > 0 ? (
         <Panel>
           <PanelHeader

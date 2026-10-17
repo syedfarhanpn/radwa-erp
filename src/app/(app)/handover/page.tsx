@@ -10,10 +10,8 @@
 import * as React from "react";
 import { Handshake } from "lucide-react";
 
-import { handoverPolicy } from "@/domain/config";
 import { useDb } from "@/store/useDemoStore";
 import { awardQueue, enquiryDetail } from "@/store/selectors";
-import { Callout } from "@/components/ui/primitives";
 import {
   HandoverPanel,
   KickoffPanel,
@@ -56,10 +54,6 @@ export default function HandoverPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Handshake />}>
-        The purchase order must be recorded before handover completes. {handoverPolicy.note}
-      </Callout>
-
       <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-700">
         <input
           type="checkbox"

@@ -24,7 +24,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { PHASE_LABELS, ROLE_LABELS, STAGE_LABELS, STAGE_PHASE, type EnquiryPhase } from "@/domain/enums";
+import { PHASE_LABELS, STAGE_LABELS, STAGE_PHASE, type EnquiryPhase } from "@/domain/enums";
 import { isTerminal } from "@/domain/rules";
 import { formatMoneyCompact } from "@/lib/money";
 import { daysUntil, todayIso } from "@/lib/dates";
@@ -47,7 +47,6 @@ import {
 } from "@/store/selectors";
 import {
   Badge,
-  Callout,
   EmptyState,
   LinkButton,
   Panel,
@@ -75,6 +74,7 @@ export default function DashboardPage() {
   const actingUser = useActingUser();
 
   const rows = allEnquiryRows(db);
+  const canRegisterEnquiries = role === "CRM_MANAGER" || role === "MD";
   const live = rows.filter((row) => !row.isClosed);
 
   /* ---------------------------------------------------- role-specific tiles
@@ -404,13 +404,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Gauge />}>
-        Showing the <span className="font-semibold">{ROLE_LABELS[role]}</span> dashboard as{" "}
-        <span className="font-semibold">{actingUser.name}</span>. Every figure below is computed from the live
-        records and updates as you act in the app.
-      </Callout>
-
-      {rows.length === 0 ? (
+      {/* Only the roles who can actually register an enquiry are offered the
+          prompt to do so — the register is theirs alone. */}
+      {rows.length === 0 && canRegisterEnquiries ? (
         <Panel>
           <PanelBody>
             <EmptyState

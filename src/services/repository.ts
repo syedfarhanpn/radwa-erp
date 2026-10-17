@@ -56,6 +56,7 @@ export interface RadwaRepository {
   setDocumentRequirement(input: InputOf<typeof Ops.setDocumentRequirement>): Promise<ActionResult>;
   removeBidDocument(input: InputOf<typeof Ops.removeBidDocument>): Promise<ActionResult>;
   submitDocumentForReview(input: InputOf<typeof Ops.submitDocumentForReview>): Promise<ActionResult>;
+  submitAllDraftDocuments(input: InputOf<typeof Ops.submitAllDraftDocuments>): Promise<ActionResult>;
   createDocumentVersion(input: InputOf<typeof Ops.createDocumentVersion>): Promise<ActionResult>;
   reviewDocument(input: InputOf<typeof Ops.reviewDocument>): Promise<ActionResult>;
   markDocumentsApproved(input: InputOf<typeof Ops.markDocumentsApproved>): Promise<ActionResult>;

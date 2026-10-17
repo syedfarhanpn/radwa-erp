@@ -13,7 +13,6 @@ import { Users } from "lucide-react";
 import { isTerminal } from "@/domain/rules";
 import { useActiveRole, useDb } from "@/store/useDemoStore";
 import { assignmentQueue, enquiryDetail } from "@/store/selectors";
-import { Callout } from "@/components/ui/primitives";
 import { AssignmentPanel, TenderDocumentsPanel } from "@/components/workflow/QualifyPanels";
 import { QueueLayout, useQueueSelection, type QueueEntry } from "@/components/workflow/QueueLayout";
 
@@ -51,11 +50,6 @@ export default function AssignmentsPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Users />}>
-        The CRM Manager assigns the MCP and Estimator; the MD can override an assignment with a recorded reason.
-        Both roles receive the tender documents in parallel.
-      </Callout>
-
       <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-700">
         <input
           type="checkbox"

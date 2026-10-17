@@ -6,8 +6,6 @@
  * Persistent left navigation, product identity, breadcrumbs, global search,
  * simulated notifications, the demo role switcher and the user menu.
  *
- * The "DEMO MODE — Sample Data" strip is always visible so nobody mistakes this
- * build for a production system.
  */
 
 import * as React from "react";
@@ -25,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 
-import { displayConfig } from "@/domain/config";
 import { brand } from "@/lib/brand";
 import { ROLE_LABELS, ROLE_SHORT_LABELS, DEPARTMENT_LABELS } from "@/domain/enums";
 
@@ -43,14 +40,13 @@ import { Avatar, Badge, Breadcrumbs, EmptyState } from "@/components/ui/primitiv
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/form";
-import { NAV_GROUPS, isNavItemActive, navItemForPath } from "./navigation";
+import { NAV_GROUPS, canRoleAccess, isNavItemActive, navItemForPath } from "./navigation";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
 
   return (
     <div className="min-h-dvh">
-      <DemoBanner />
 
       <div className="flex">
         {/* Desktop sidebar */}
@@ -82,23 +78,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar onOpenNav={() => setMobileNavOpen(true)} />
           <main className="min-w-0 flex-1 px-4 py-4 sm:px-6 sm:py-5">{children}</main>
-          <ShellFooter />
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------- demo banner --- */
-
-function DemoBanner() {
-  return (
-    <div className="no-print flex items-center justify-center gap-2 bg-ink-900 px-4 py-1 text-center text-2xs font-medium tracking-wide text-ink-100">
-      <span className="inline-block size-1.5 rounded-full bg-warn-200" aria-hidden />
-      {displayConfig.demoBannerText}
-      <span className="hidden text-ink-400 sm:inline">
-        · Frontend demonstration build · No backend, authentication, email or AI service is connected
-      </span>
     </div>
   );
 }
@@ -133,7 +114,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="thin-scroll flex-1 overflow-y-auto px-2 py-3" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => {
-          const visible = group.items.filter((item) => !item.hiddenFor?.includes(role));
+          const visible = group.items.filter((item) => canRoleAccess(item, role));
           if (visible.length === 0) return null;
 
           return (
@@ -200,17 +181,30 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
   const pathname = usePathname();
+  const role = useActiveRole();
   const navItem = navItemForPath(pathname);
-  const title = navItem?.label ?? brand.companyName;
+  // A detail page inherits its section label. For a role with no access to
+  // that section, naming it would advertise a page they cannot open.
+  const title =
+    navItem && !canRoleAccess(navItem, role)
+      ? "Enquiry"
+      : (navItem?.label ?? brand.companyName);
 
   const crumbs = React.useMemo(() => {
     const items: Array<{ label: string; href?: string }> = [{ label: brand.shortName, href: "/dashboard" }];
     const group = NAV_GROUPS.find((g) => g.items.some((i) => i.href === navItem?.href));
     if (group) items.push({ label: group.label });
-    if (navItem) items.push({ label: navItem.label, href: navItem.href });
+    // Do not link a crumb this role cannot open — show the label only, so the
+    // trail still reads correctly without offering a dead end.
+    if (navItem) {
+      items.push({
+        label: navItem.label,
+        href: canRoleAccess(navItem, role) ? navItem.href : undefined,
+      });
+    }
     if (navItem && pathname !== navItem.href) items.push({ label: "Detail" });
     return items;
-  }, [navItem, pathname]);
+  }, [navItem, pathname, role]);
 
   return (
     <header className="no-print sticky top-0 z-30 border-b border-ink-200 bg-white/95 backdrop-blur">
@@ -527,10 +521,6 @@ function UserMenu() {
               </button>
             </div>
 
-            <p className="border-t border-ink-200 bg-warn-50 px-3 py-2 text-2xs leading-relaxed text-warn-700">
-              Demonstration sign-in — it grants no real authorization. The production backend must enforce
-              permissions on every request.
-            </p>
           </div>
         ) : null}
       </div>
@@ -555,20 +545,6 @@ function UserMenu() {
         }
       />
     </>
-  );
-}
-
-/* --------------------------------------------------------------- footer --- */
-
-function ShellFooter() {
-  return (
-    <footer className="no-print border-t border-ink-200 px-4 py-3 sm:px-6">
-      <p className="text-2xs leading-relaxed text-ink-400">
-        {brand.companyName} — frontend demonstration build. All clients, people, projects and values shown are fictional
-        sample data. No backend, database, authentication, email delivery, document storage or AI service is
-        connected.
-      </p>
-    </footer>
   );
 }
 

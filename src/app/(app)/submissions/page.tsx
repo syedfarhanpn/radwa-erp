@@ -87,11 +87,6 @@ export default function SubmissionsPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<Send />}>
-        Submission is simulated — this demo sends no email. &ldquo;Submitted&rdquo; and &ldquo;submitted on
-        time&rdquo; are tracked separately, so a delayed submission stays visible as such.
-      </Callout>
-
       {scopeNote ? <Callout tone="info">{scopeNote}</Callout> : null}
 
       <QueueLayout

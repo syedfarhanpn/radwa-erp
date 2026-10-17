@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
+  Zap,
   XCircle,
 } from "lucide-react";
 
@@ -106,6 +107,7 @@ export function BidPackagePanel({ detail }: { detail: EnquiryDetail }) {
 
   const completeness = detail.completeness!;
   const docs = detail.documents;
+  const draftCount = docs.filter((doc) => currentVersion(doc)?.reviewStatus === "DRAFT").length;
   const refreshed = detailDoc ? (docs.find((d) => d.id === detailDoc.id) ?? null) : null;
 
   return (
@@ -119,9 +121,23 @@ export function BidPackagePanel({ detail }: { detail: EnquiryDetail }) {
             <>
               <PackageStatusBadge status={pkg.status} />
               {role === "ESTIMATOR" ? (
-                <Button size="sm" variant="secondary" icon={<Plus />} onClick={() => setAddOpen(true)}>
-                  Add document
-                </Button>
+                <>
+                  <Button size="sm" variant="secondary" icon={<Plus />} onClick={() => setAddOpen(true)}>
+                    Add document
+                  </Button>
+                  {draftCount > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="subtle"
+                      icon={<Zap />}
+                      loading={busy}
+                      loadingLabel="Submitting…"
+                      onClick={() => void run(() => repo.submitAllDraftDocuments({ packageId: pkg.id }))}
+                    >
+                      Demo: submit all {draftCount}
+                    </Button>
+                  ) : null}
+                </>
               ) : null}
             </>
           }

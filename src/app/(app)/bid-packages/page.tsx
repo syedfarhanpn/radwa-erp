@@ -72,12 +72,6 @@ export default function BidPackagesPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<FileCheck2 />}>
-        Approvals are bound to a document version. Revising one document leaves every other approval intact, and
-        a newly added required document must complete its own review before the CRM Manager can verify the
-        package again.
-      </Callout>
-
       {scopeNote ? <Callout tone="info">{scopeNote}</Callout> : null}
 
       <QueueLayout

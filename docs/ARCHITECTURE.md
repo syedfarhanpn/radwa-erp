@@ -83,7 +83,7 @@ dashboard counts can never disagree: there is one derivation, not several.
 | --- | --- | --- |
 | `/login` | Sign-in screen with a one-click demo-account list | — |
 | `/dashboard` | Role-specific queues, priority tasks, workflow rollup, activity | All |
-| `/enquiries` | Register: search, filters, sorting | All |
+| `/enquiries` | Register: search, filters, sorting | CRM Manager, MD |
 | `/enquiries/new` | Enquiry registration form (reached from the register, not the sidebar) | CRM Manager |
 | `/enquiries/[id]` | Detail hub — 12 tabs, hosts every workflow panel | All |
 | `/pursuit` | Pursuit decision queue | MD |
@@ -101,7 +101,7 @@ dashboard counts can never disagree: there is one derivation, not several.
 | `/work-orders/[id]/print` | Print-friendly work order | CRM Manager |
 | `/surveys/[id]/print` | Print-friendly site survey checklist | Surveyor, MCP |
 | `/handover` | Kickoff, PCP, PO, Operations handover | CRM Manager, MCP |
-| `/demo` | Sample data, reset, configurable defaults, rule reference | All |
+| `/demo` | Reset, configurable defaults, rule reference (not in the sidebar) | All |
 
 The enquiry detail page keeps its active tab in the URL (`?tab=package`), so
 queue screens and notifications deep-link straight to the right step.
@@ -228,8 +228,13 @@ The scope is memoised on the database reference. The store replaces `db`
 wholesale on every write, so reference equality is a sound cache key and the
 scope is rebuilt once per change rather than once per reading component.
 
-**This is not access control.** It is presentation scoping in a demo with no
-authentication. The backend must filter and authorize server-side.
+Screen access is a separate, coarser gate: the `roles` allow-list on each nav
+item in `src/components/shell/navigation.ts`, enforced for direct URLs by
+`canAccessPath` in the app layout. Record scoping decides *which rows* a user
+sees; the allow-list decides *which pages* they can open.
+
+**Neither is access control.** Both are presentation concerns in a client with
+no authorization. The backend must filter and authorize server-side.
 
 ---
 

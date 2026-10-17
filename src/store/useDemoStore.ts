@@ -26,7 +26,7 @@ import { DEMO_ROLES, type DemoRole } from "@/domain/enums";
 import { validateManagementTeam } from "@/domain/rules";
 import type { ActionResult, DemoDatabase, Id, User } from "@/domain/types";
 import { createSeedDatabase, SCHEMA_VERSION } from "@/data/seed";
-import { findAccount, verifyCredentials } from "@/data/auth";
+import { verifyCredentials } from "@/data/auth";
 import {
   isSupabaseConfigured,
   restoreSupabaseSession,
@@ -65,8 +65,6 @@ export interface DemoState {
 
   /** Verify credentials against Supabase, falling back to the demo accounts. */
   signIn: (username: string, password: string) => Promise<ActionResult>;
-  /** Sign in directly as a known demo account (the one-click list on /login). */
-  signInAs: (username: string) => ActionResult;
   /** Re-establish a Supabase session on page load. */
   restoreSession: () => Promise<boolean>;
   signOut: () => Promise<void>;
@@ -135,11 +133,16 @@ export const useDemoStore = create<DemoState>()(
             return { ok: true, message: `Signed in as ${outcome.profile.fullName}.` };
           }
 
-          // Bad credentials are final. Only an unreachable project falls back,
-          // so a wrong password can never be waved through by the local list.
-          if (!outcome.unavailable) {
-            return { ok: false, message: outcome.message };
-          }
+          // Supabase could not authenticate. Fall through to the built-in demo
+          // accounts, which still require the correct demo password — a wrong
+          // password is not waved through, it simply fails in both stores.
+          //
+          // TRADE-OFF: this means an account whose password was changed in
+          // Supabase can still be opened with its original demo password. It
+          // exists so the app stays usable before the migration in
+          // `supabase/migrations` has been run, when no Supabase accounts
+          // exist at all. Delete this fallback once the real accounts are the
+          // only ones that should work.
         }
 
         const local = verifyCredentials(username, password);
@@ -154,21 +157,9 @@ export const useDemoStore = create<DemoState>()(
         return {
           ok: true,
           message: isSupabaseConfigured
-            ? "Supabase was unreachable — signed in with the local demo account."
+            ? "Supabase did not recognise that account — signed in with the built-in demo account instead."
             : "Signed in.",
         };
-      },
-
-      signInAs: (username) => {
-        const account = findAccount(username);
-        if (!account) return { ok: false, message: "Unknown demo account." };
-        set({
-          signedIn: true,
-          authSource: "local",
-          activeRole: account.role,
-          actingUserId: account.userId,
-        });
-        return { ok: true, message: "Signed in." };
       },
 
       restoreSession: async () => {

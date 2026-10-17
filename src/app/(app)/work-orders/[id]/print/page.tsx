@@ -12,7 +12,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 
-import { displayConfig } from "@/domain/config";
 import { BID_SUBMISSION_TYPE_LABELS, formatProjectTypes, WORK_ORDER_STATUS_LABELS } from "@/domain/enums";
 import { formatMoney } from "@/lib/money";
 import { formatDate } from "@/lib/dates";
@@ -82,11 +81,6 @@ export default function WorkOrderPrintPage() {
           </div>
         </header>
 
-        <p className="mt-3 rounded border border-warn-200 bg-warn-50 px-2.5 py-1.5 text-2xs text-warn-700">
-          {displayConfig.demoBannerText} — illustrative document produced by a frontend demonstration build. Not a
-          legally issued work order. The numbering convention shown is a sample and must be administrator
-          configurable in production.
-        </p>
 
         <section className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 text-xs">
           <Row label="Client" value={detail.client?.name ?? "—"} />

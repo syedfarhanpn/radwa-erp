@@ -85,11 +85,6 @@ export default function SurveysPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<ClipboardCheck />}>
-        Every incomplete checklist item needs a reason, and the MCP must clear each exception before accepting the
-        report. A survey that is not required never blocks the Estimator.
-      </Callout>
-
       {scopeNote ? (
         <Callout tone="info">{scopeNote}</Callout>
       ) : (

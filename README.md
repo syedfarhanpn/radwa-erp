@@ -90,13 +90,36 @@ persisted state from an older version is discarded rather than half-migrated.
 
 ## 4. Demo roles
 
-Each person signs in at `/login` with their own username. The sign-in screen
-lists every demo account — **click any person to sign straight in**, no typing.
-To change user mid-demo, open the user menu (top right) and choose *Switch
-user*.
+Each person signs in at `/login` with their own username and the shared demo
+password. To change user mid-demo, open the user menu (top right) and choose
+*Switch user*.
 
-The shared demo password is shown on the sign-in screen and defined in
-`src/data/auth.ts`.
+### Usernames
+
+All eighteen accounts use the same password: **`radwa2026`** — defined as
+`DEMO_PASSWORD` in `src/data/auth.ts` and seeded by
+`supabase/migrations/0001_auth_profiles.sql`. Change it in both places.
+
+| Username | Person | Role |
+| --- | --- | --- |
+| `babukuttan` | Babukuttan | MD — main, mandatory final-bid approver |
+| `md1` | MD1 | MD |
+| `md2` | MD2 | MD |
+| `layla` | Layla Haddad | CRM Manager |
+| `estimator1` | Estimator 1 | Estimator |
+| `estimator2` | Estimator 2 | Estimator |
+| `akshai` | Akshai | MCP / Project Manager |
+| `sandeep` | Sandeep | MCP / Project Manager |
+| `pk` | PK | MCP / Project Manager |
+| `majid` | Majid Al Balushi | Surveyor |
+| `imran` | Imran Shaikh | Surveyor |
+| `ahmed` | Ahmed Nasser | Department Reviewer — Technical |
+| `fatima` | Fatima Zahra | Department Reviewer — Commercial |
+| `vikram` | Vikram Rao | Department Reviewer — Planning |
+| `salim` | Salim Al Harthy | Department Reviewer — Procurement |
+| `grace` | Grace Mwangi | Department Reviewer — HSE |
+| `peter` | Peter Oduya | Department Reviewer — Quality |
+| `mariam` | Mariam Saleh | Department Reviewer — HR / Admin |
 
 | Role | People | Primary screens |
 | --- | --- | --- |
@@ -123,6 +146,36 @@ Surveyors and Departmental Reviewers see the full register.
 This is **presentation scoping in a demo with no authentication** — it keeps
 screens relevant, it is not access control. The production backend must filter
 and authorize server-side (`src/store/visibility.ts` has the detail).
+
+### Who can open what
+
+| Screen | CRM | MD | MCP | Estimator | Surveyor | Reviewer |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Dashboard | ● | ● | ● | ● | ● | ● |
+| Enquiry Register | ● | ● | | | | |
+| Pursuit Decisions | ● | ● | ● | | | |
+| Assignments | ● | ● | ● | | | |
+| Site Surveys | ● | ● | ● | ● | ● | |
+| BOQ & Estimates | ● | ● | ● | ● | | |
+| Estimate Approvals | ● | ● | ● | | | |
+| Bid Packages | ● | ● | ● | ● | | |
+| Document Reviews | ● | ● | ● | | | ● |
+| Final Bid Approval | ● | ● | ● | | | |
+| Submission & Follow-up | ● | ● | ● | | | |
+| Work Orders | ● | ● | ● | | | |
+| Kickoff & Handover | ● | ● | ● | | | |
+
+The matrix lives in one place: the `roles` allow-list on each item in
+`src/components/shell/navigation.ts`. Hiding an item from the sidebar also
+blocks the URL — `canAccessPath` guards the landing pages in the app layout,
+and a role without access sees a short notice instead.
+
+Individual records stay reachable: an Estimator has no Enquiry Register, but
+can still open `/enquiries/<id>` for an enquiry assigned to them from their
+own queues. Only the landing pages are gated.
+
+As with the per-role record scoping, this is **presentation only**. The
+backend must authorize every request.
 
 ### Where each MD is involved
 
@@ -208,9 +261,9 @@ in `src/services/repository.ts` is where it plugs in.
    select username, full_name, role, department from public.profiles order by role, username;
    ```
 
-Until step 1 is done, Supabase will reject every sign-in — the accounts do not
-exist yet. Use the one-click demo accounts in the meantime; they sign in
-locally and skip Supabase entirely.
+Until step 1 is done Supabase has no accounts to match, so every sign-in falls
+through to the built-in demo accounts in `src/data/auth.ts` — same usernames,
+same password, no Supabase round-trip. See *Fallback behaviour* below.
 
 ### Environment
 
@@ -245,7 +298,8 @@ role and identity columns frozen.
 | --- | --- |
 | Supabase not configured | Local demo accounts, stated on the sign-in screen |
 | Supabase unreachable / paused | Falls back to local accounts, and says so |
-| Wrong password | **Refused.** Never falls back — a bad password cannot be waved through |
+| Supabase rejects the credentials | Falls back to the built-in demo accounts, which require the same username and the demo password; the sign-in message says so |
+| Wrong password | **Refused** by both stores — a bad password is not waved through |
 | Signed in, no `profiles` row | Refused, telling you to run the migration |
 
 A stale session is re-checked against Supabase whenever the app loads, so a

@@ -12,10 +12,11 @@
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/shell/AppShell";
-import { SkeletonBlock } from "@/components/ui/primitives";
+import { canAccessPath } from "@/components/shell/navigation";
+import { Callout, SkeletonBlock } from "@/components/ui/primitives";
 import { ToastProvider } from "@/components/ui/toast";
 import { brand } from "@/lib/brand";
 import { useDemoStore, useHydrated } from "@/store/useDemoStore";
@@ -27,6 +28,8 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
   const restoreSession = useDemoStore((s) => s.restoreSession);
   const signOut = useDemoStore((s) => s.signOut);
   const router = useRouter();
+  const pathname = usePathname();
+  const role = useDemoStore((s) => s.activeRole);
 
   // Only once the persisted session has been read — redirecting before that
   // would bounce a signed-in user out on every refresh.
@@ -54,10 +57,22 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
 
   if (!hydrated || !signedIn) return <BootPlaceholder />;
 
+  // Hiding a page from the sidebar is not enough — the URL still resolves.
+  // Landing pages outside this role's remit are refused with an explanation.
+  const allowed = canAccessPath(pathname, role);
+
   return (
     <ToastProvider>
-      <AppShell>{children}</AppShell>
+      <AppShell>{allowed ? children : <NoAccessNotice />}</AppShell>
     </ToastProvider>
+  );
+}
+
+function NoAccessNotice() {
+  return (
+    <Callout tone="warn" title="Not available for your role">
+      This page is not part of your work. Use the navigation on the left for the screens assigned to you.
+    </Callout>
   );
 }
 

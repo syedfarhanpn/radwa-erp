@@ -269,5 +269,4 @@ export const displayConfig = {
   defaultCurrency: "AED",
   /** Variance above this magnitude is highlighted in the BOQ workspace. */
   varianceAttentionPercent: 10,
-  demoBannerText: "DEMO MODE — Sample Data",
 } as const;

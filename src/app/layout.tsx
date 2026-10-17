@@ -9,7 +9,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: `${brand.companyName} — ${brand.tagline}`,
   description:
-    "Construction enquiry, tender management and work-order preparation system. Frontend demonstration build with sample data.",
+    "Construction enquiry, tender management and work-order preparation system.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

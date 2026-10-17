@@ -19,7 +19,6 @@ import {
   ListChecks,
   Scale,
   Send,
-  Settings2,
   ShieldCheck,
 } from "lucide-react";
 
@@ -46,8 +45,12 @@ export interface NavItem {
   icon: LucideIcon;
   /** Roles for which this item is a primary daily destination. */
   primaryFor?: DemoRole[];
-  /** Roles that cannot act here; the item is hidden for them. */
-  hiddenFor?: DemoRole[];
+  /**
+   * Who may see and open this page. An explicit allow-list, so the access
+   * matrix can be read off this one file rather than inferred from a set of
+   * exclusions. Omitted means every role.
+   */
+  roles?: DemoRole[];
   badge?: (db: DemoDatabase, role: DemoRole, actingUserId: Id) => number;
   description?: string;
 }
@@ -69,6 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/enquiries",
+        roles: ["CRM_MANAGER", "MD"],
         label: "Enquiry Register",
         icon: ClipboardList,
         description: "Every enquiry with search and filters",
@@ -82,28 +86,28 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/pursuit",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Pursuit Decisions",
         icon: Scale,
         primaryFor: ["MD"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db) => pursuitQueue(db).length,
         description: "Management Team pursue / reject decisions",
       },
       {
         href: "/assignments",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Assignments",
         icon: Building2,
         primaryFor: ["CRM_MANAGER"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db) => assignmentQueue(db).length,
         description: "Assign the MCP and Estimator",
       },
       {
         href: "/surveys",
+        roles: ["CRM_MANAGER", "MD", "MCP", "SURVEYOR", "ESTIMATOR"],
         label: "Site Surveys",
         icon: ClipboardCheck,
         primaryFor: ["SURVEYOR", "MCP"],
-        hiddenFor: ["DEPARTMENT_REVIEWER"],
         badge: (db, role, userId) =>
           surveyQueue(db).filter((item) => {
             if (role === "SURVEYOR") {
@@ -131,10 +135,10 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/estimates",
+        roles: ["CRM_MANAGER", "MD", "MCP", "ESTIMATOR"],
         label: "BOQ & Estimates",
         icon: FileStack,
         primaryFor: ["ESTIMATOR"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db, role, userId) =>
           db.estimates.filter(
             (e) =>
@@ -145,19 +149,19 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/estimates/approvals",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Estimate Approvals",
         icon: ShieldCheck,
         primaryFor: ["MD"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER", "ESTIMATOR"],
         badge: (db, role, userId) => estimateApprovalQueue(db, role === "MD" ? userId : undefined).length,
         description: "MD and responsible-manager approval",
       },
       {
         href: "/bid-packages",
+        roles: ["CRM_MANAGER", "MD", "MCP", "ESTIMATOR"],
         label: "Bid Packages",
         icon: FileCheck2,
         primaryFor: ["ESTIMATOR", "CRM_MANAGER"],
-        hiddenFor: ["SURVEYOR"],
         badge: (db, role, userId) => {
           if (role === "ESTIMATOR") return rejectedDocuments(db, userId).length;
           if (role === "CRM_MANAGER") return packageQueue(db).filter((p) => p.canVerify).length;
@@ -167,10 +171,10 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/document-reviews",
+        roles: ["CRM_MANAGER", "MD", "MCP", "DEPARTMENT_REVIEWER"],
         label: "Document Reviews",
         icon: ListChecks,
         primaryFor: ["DEPARTMENT_REVIEWER"],
-        hiddenFor: ["SURVEYOR"],
         badge: (db, role, userId) => {
           const department = role === "DEPARTMENT_REVIEWER" ? userById(db, userId)?.department : undefined;
           return documentReviewQueue(db, department).length;
@@ -179,10 +183,10 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/final-approvals",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Final Bid Approval",
         icon: Scale,
         primaryFor: ["MD"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER", "ESTIMATOR"],
         badge: (db, role, userId) => finalApprovalQueue(db, role === "MD" ? userId : undefined).length,
         description: "Management decision on the complete package",
       },
@@ -193,48 +197,55 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/submissions",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Submission & Follow-up",
         icon: Send,
         primaryFor: ["MCP"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db, role, userId) => openFollowUpTasks(db, role === "MCP" ? userId : undefined).length,
         description: "Submit proposals, follow up, record responses",
       },
       {
         href: "/work-orders",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Work Orders",
         icon: CalendarCheck2,
         primaryFor: ["CRM_MANAGER"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db) => awardQueue(db).filter((a) => !a.workOrder || a.workOrder.status === "DRAFT").length,
         description: "Draft, review and finalize work orders",
       },
       {
         href: "/handover",
+        roles: ["CRM_MANAGER", "MD", "MCP"],
         label: "Kickoff & Handover",
         icon: Handshake,
         primaryFor: ["CRM_MANAGER", "MCP"],
-        hiddenFor: ["SURVEYOR", "DEPARTMENT_REVIEWER"],
         badge: (db) =>
           awardQueue(db).filter((a) => a.workOrder?.status === "FINALIZED" || a.handoverReady).length,
         description: "Kickoff minutes, PCP, PO and Operations handover",
       },
     ],
   },
-  {
-    label: "Demo",
-    items: [
-      {
-        href: "/demo",
-        label: "Demo Controls",
-        icon: Settings2,
-        description: "Sample data, reset and business-rule reference",
-      },
-    ],
-  },
 ];
 
 export const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
+
+/** May this role see and open this page? */
+export function canRoleAccess(item: NavItem, role: DemoRole): boolean {
+  return !item.roles || item.roles.includes(role);
+}
+
+/**
+ * Guard for direct URL access.
+ *
+ * Matches the pathname against a nav item **exactly**, never a prefix: an
+ * Estimator has no Enquiry Register page but must still be able to open an
+ * individual enquiry at `/enquiries/<id>` from their own queues. Only the
+ * landing pages are gated.
+ */
+export function canAccessPath(pathname: string, role: DemoRole): boolean {
+  const item = ALL_NAV_ITEMS.find((candidate) => candidate.href === pathname);
+  return item ? canRoleAccess(item, role) : true;
+}
 
 /** Longest matching nav href, so `/enquiries/new` beats `/enquiries`. */
 export function navItemForPath(pathname: string): NavItem | undefined {

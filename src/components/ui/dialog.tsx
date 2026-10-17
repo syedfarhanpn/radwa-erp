@@ -53,16 +53,31 @@ export function Dialog({
   // server `false` and the client `true` without a state update after mount.
   const mounted = React.useSyncExternalStore(subscribeNever, getTrue, getFalse);
 
+  // Callers pass `onClose` and `initialFocusRef` as inline values, so their
+  // identity changes on every render. Reading them through refs keeps the
+  // effect below keyed on `open` alone.
+  //
+  // This matters more than it looks: when the effect re-ran on each render it
+  // tore down and rebuilt the focus trap after every keystroke, moving focus
+  // back to the first focusable element — so a text field would accept exactly
+  // one character before focus jumped away.
+  const onCloseRef = React.useRef(onClose);
+  const initialFocusRefRef = React.useRef(initialFocusRef);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+    initialFocusRefRef.current = initialFocusRef;
+  });
+
   React.useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const { overflow } = document.body.style;
     document.body.style.overflow = "hidden";
 
-    // Move focus into the dialog once it has painted.
+    // Move focus into the dialog once it has painted — once per opening.
     const timer = window.setTimeout(() => {
       const target =
-        initialFocusRef?.current ??
+        initialFocusRefRef.current?.current ??
         panelRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
         panelRef.current;
       target?.focus();
@@ -71,7 +86,7 @@ export function Dialog({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !panelRef.current) return;
@@ -99,7 +114,7 @@ export function Dialog({
       document.body.style.overflow = overflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose, initialFocusRef]);
+  }, [open]);
 
   if (!open || !mounted) return null;
 

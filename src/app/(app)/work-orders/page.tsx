@@ -19,7 +19,6 @@ import { awardQueue, userById } from "@/store/selectors";
 import {
   Badge,
   Button,
-  Callout,
   EmptyState,
   LinkButton,
   Panel,
@@ -42,11 +41,6 @@ export default function WorkOrdersPage() {
 
   return (
     <div className="space-y-4">
-      <Callout tone="info" icon={<FileSignature />}>
-        An award can generate a work-order draft without a purchase order. Finalizing the work order and handing
-        over to Operations are separate stages.
-      </Callout>
-
       {needsDraft.length > 0 ? (
         <Panel>
           <PanelHeader
