@@ -64,6 +64,10 @@ function buildScope(db: DemoDatabase, role: DemoRole, userId: Id): DemoDatabase 
     clients: db.clients,
     contacts: db.contacts,
     sequences: db.sequences,
+    // The HR register is scoped by role, not by enquiry assignment: the roles
+    // narrowed here (Estimator, MCP) cannot open it at all, so there is
+    // nothing to filter.
+    employees: db.employees,
 
     enquiries: db.enquiries.filter((e) => visible.has(e.id)),
     pursuitDecisions: byEnquiry(db.pursuitDecisions),

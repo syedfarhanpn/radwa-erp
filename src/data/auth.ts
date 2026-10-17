@@ -34,6 +34,9 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   // CRM
   { username: "layla", userId: USER_IDS.crm, role: "CRM_MANAGER" },
 
+  // HR
+  { username: "nadia", userId: USER_IDS.hrManager, role: "HR" },
+
   // Estimators
   { username: "estimator1", userId: USER_IDS.estimator1, role: "ESTIMATOR" },
   { username: "estimator2", userId: USER_IDS.estimator2, role: "ESTIMATOR" },

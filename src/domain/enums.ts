@@ -16,6 +16,10 @@ export const DEMO_ROLES = [
   "MCP",
   "SURVEYOR",
   "DEPARTMENT_REVIEWER",
+  // The HR Manager's portal. Distinct from the HR_ADMIN *department* below:
+  // that is a bid-document reviewer, this is the people system. Same two
+  // letters, two different things.
+  "HR",
 ] as const;
 export type DemoRole = (typeof DEMO_ROLES)[number];
 
@@ -26,6 +30,7 @@ export const ROLE_LABELS: Record<DemoRole, string> = {
   MCP: "MCP / Project Manager",
   SURVEYOR: "Surveyor",
   DEPARTMENT_REVIEWER: "Department Reviewer",
+  HR: "HR Manager",
 };
 
 export const ROLE_SHORT_LABELS: Record<DemoRole, string> = {
@@ -35,6 +40,7 @@ export const ROLE_SHORT_LABELS: Record<DemoRole, string> = {
   MCP: "MCP",
   SURVEYOR: "Surveyor",
   DEPARTMENT_REVIEWER: "Reviewer",
+  HR: "HR",
 };
 
 /* -------------------------------------------------------- departments ----- */

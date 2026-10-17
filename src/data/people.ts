@@ -36,6 +36,8 @@ export const USER_IDS = {
   revHse: "usr_rev_grace",
   revQuality: "usr_rev_peter",
   revHrAdmin: "usr_rev_mariam",
+  // HR — owns the employee register and the joining form
+  hrManager: "usr_hr_nadia",
   // Operations (handover recipient only — Operations module is out of scope)
   operationsHead: "usr_ops_khalid",
 } as const;
@@ -195,6 +197,14 @@ export const DEMO_USERS: User[] = [
     email: "mariam.youssef@radwa.example",
     roles: ["DEPARTMENT_REVIEWER"],
     department: "HR_ADMIN",
+  },
+  {
+    id: USER_IDS.hrManager,
+    name: "Nadia Rahman",
+    initials: "NR",
+    jobTitle: "HR Manager",
+    email: "nadia.rahman@radwa.example",
+    roles: ["HR"],
   },
   {
     id: USER_IDS.operationsHead,

@@ -100,7 +100,7 @@ password. To change user mid-demo, open the user menu (top right) and choose
 
 ### Usernames
 
-All eighteen accounts use the same password: **`radwa2026`** — defined as
+All nineteen accounts use the same password: **`radwa2026`** — defined as
 `DEMO_PASSWORD` in `src/data/auth.ts` and seeded by
 `supabase/migrations/0001_auth_profiles.sql`. Change it in both places.
 
@@ -124,6 +124,7 @@ All eighteen accounts use the same password: **`radwa2026`** — defined as
 | `grace` | Grace Mwangi | Department Reviewer — HSE |
 | `peter` | Peter Oduya | Department Reviewer — Quality |
 | `mariam` | Mariam Saleh | Department Reviewer — HR / Admin |
+| `nadia` | Nadia Rahman | HR Manager |
 
 | Role | People | Primary screens |
 | --- | --- | --- |
@@ -133,6 +134,7 @@ All eighteen accounts use the same password: **`radwa2026`** — defined as
 | MCP / Project Manager | Akshai, Sandeep, PK | Surveys, Submission & Follow-up, Kickoff |
 | Surveyor | Majid Al Balushi, Imran Shaikh | Site Surveys |
 | Department Reviewer | Technical, Commercial, Planning, Procurement, HSE, Quality, HR/Admin | Document Reviews |
+| HR Manager | Nadia Rahman | Employee Register, Employee Joining |
 
 Within a role you can also switch *which person* is acting — essential for
 Department Reviewer (seven departments), for MCP and Estimator (whose views are
@@ -153,21 +155,26 @@ and authorize server-side (`src/store/visibility.ts` has the detail).
 
 ### Who can open what
 
-| Screen | CRM | MD | MCP | Estimator | Surveyor | Reviewer |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| Dashboard | ● | ● | ● | ● | ● | ● |
-| Enquiry Register | ● | ● | | | | |
-| Pursuit Decisions | ● | ● | ● | | | |
-| Assignments | ● | ● | ● | | | |
-| Site Surveys | ● | ● | ● | ● | ● | |
-| BOQ & Estimates | ● | ● | ● | ● | | |
-| Estimate Approvals | ● | ● | ● | | | |
-| Bid Packages | ● | ● | ● | ● | | |
-| Document Reviews | ● | ● | ● | | | ● |
-| Final Bid Approval | ● | ● | ● | | | |
-| Submission & Follow-up | ● | ● | ● | | | |
-| Work Orders | ● | ● | ● | | | |
-| Kickoff & Handover | ● | ● | ● | | | |
+| Screen | CRM | MD | MCP | Estimator | Surveyor | Reviewer | HR |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| Dashboard | ● | ● | ● | ● | ● | ● | ● |
+| Enquiry Register | ● | ● | | | | | |
+| Pursuit Decisions | ● | ● | ● | | | | |
+| Assignments | ● | ● | ● | | | | |
+| Site Surveys | ● | ● | ● | ● | ● | | |
+| BOQ & Estimates | ● | ● | ● | ● | | | |
+| Estimate Approvals | ● | ● | ● | | | | |
+| Bid Packages | ● | ● | ● | ● | | | |
+| Document Reviews | ● | ● | ● | | | ● | |
+| Final Bid Approval | ● | ● | ● | | | | |
+| Submission & Follow-up | ● | ● | ● | | | | |
+| Work Orders | ● | ● | ● | | | | |
+| Kickoff & Handover | ● | ● | ● | | | | |
+| Employee Register | | ◐ | | | | | ● |
+| Employee Joining | | | | | | | ● |
+
+● full access · ◐ read-only. The MD can read the employee register; only HR
+can add or change a record, and the URL is guarded, not just the sidebar.
 
 The matrix lives in one place: the `roles` allow-list on each item in
 `src/components/shell/navigation.ts`. Hiding an item from the sidebar also
@@ -258,6 +265,10 @@ stored as one shared JSON document rather than 28 normalised tables — see
      row-level security policies, and the eighteen accounts.
    - `supabase/migrations/0002_workspace_sync.sql` — the shared workspace
      document and the compare-and-swap writer that guards it.
+   - `supabase/migrations/0003_repair_auth_tokens.sql` — repairs rows 0001
+     left unreadable, and stops them being created. Ends with a verification
+     table; every row must read OK.
+   - `supabase/migrations/0004_hr_role.sql` — the HR Manager role and account.
 2. **Turn off email confirmation.** Dashboard → Authentication → Providers →
    Email → uncheck *Confirm email*. The seeded accounts cannot sign in while
    it is on.

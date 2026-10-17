@@ -56,6 +56,7 @@ export const DEFAULT_USER_FOR_ROLE: Record<DemoRole, Id> = {
   MCP: USER_IDS.mcpAkshai,
   SURVEYOR: USER_IDS.surveyorMajid,
   DEPARTMENT_REVIEWER: USER_IDS.revTechnical,
+  HR: USER_IDS.hrManager,
 };
 
 /**
@@ -223,6 +224,25 @@ function isUsableDb(value: unknown): value is DemoDatabase {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<DemoDatabase>;
   return REQUIRED_COLLECTIONS.every((key) => candidate[key] !== undefined);
+}
+
+/**
+ * Fill in collections added after a document was written.
+ *
+ * Both the localStorage cache and the shared Supabase document can predate a
+ * new module — the HR module's `employees` is the first such case. Without
+ * this, the first screen to read `db.employees` would throw on a document
+ * that is otherwise perfectly current, and bumping SCHEMA_VERSION to force a
+ * reseed would throw away everyone's real work to add an empty array.
+ *
+ * Mutates in place: the caller owns the object, which is either freshly
+ * deserialised or already a clone.
+ */
+function backfillCollections(db: DemoDatabase): DemoDatabase {
+  db.employees ??= [];
+  db.sequences ??= {};
+  db.sequences.employee ??= 1000;
+  return db;
 }
 
 export const useDemoStore = create<DemoState>()(
@@ -410,7 +430,7 @@ export const useDemoStore = create<DemoState>()(
         return {
           ...current,
           ...incoming,
-          db: isUsableDb(incoming.db) ? incoming.db : freshSeed(),
+          db: isUsableDb(incoming.db) ? backfillCollections(incoming.db) : freshSeed(),
         };
       },
     },
@@ -567,7 +587,9 @@ function rebaseOnto(serverDb: DemoDatabase, serverRevision: number): boolean {
     return false;
   }
 
-  const draft = cloneDb(serverDb);
+  // The shared document may have been written by a build without the HR
+  // module, so it is brought up to the current shape before anything reads it.
+  const draft = backfillCollections(cloneDb(serverDb));
   const survived: PendingOp[] = [];
   const lost: string[] = [];
 

@@ -26,8 +26,11 @@ import {
 
 import { PHASE_LABELS, STAGE_LABELS, STAGE_PHASE, type EnquiryPhase } from "@/domain/enums";
 import { isTerminal } from "@/domain/rules";
+import type { DemoDatabase } from "@/domain/types";
 import { formatMoneyCompact } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { daysUntil, todayIso } from "@/lib/dates";
+import { expiringIqamas } from "@/services/hrOperations";
 import { useActingUser, useActiveRole, useDb } from "@/store/useDemoStore";
 import {
   assignmentQueue,
@@ -58,6 +61,105 @@ import {
 import { Table, TBody, TD, TH, THead, TR, TableEmptyRow, TableWrap } from "@/components/ui/table";
 import { ActivityFeed } from "@/components/workflow/ActivityFeed";
 import { DeadlineCell, StageBadge } from "@/components/workflow/StatusBadges";
+
+/**
+ * What HR sees in place of the enquiry pipeline.
+ *
+ * The tender half of this dashboard is hidden for HR rather than left to
+ * render empty: a People manager has no use for submission deadlines, and an
+ * empty "live enquiries" table reads as something being broken.
+ */
+function HrDashboardSections({ db }: { db: DemoDatabase }) {
+  const renewals = expiringIqamas(db);
+  const recent = [...db.employees]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8);
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
+      <Panel>
+        <PanelHeader
+          title="Recent joinings"
+          description="Most recently registered first."
+          actions={
+            <LinkButton href="/hr/employees" size="sm" variant="secondary">
+              Open register
+            </LinkButton>
+          }
+        />
+        {recent.length === 0 ? (
+          <PanelBody>
+            <EmptyState
+              icon={<Users />}
+              title="No employees yet"
+              description="Register the first joining to start the employee register."
+              action={
+                <LinkButton href="/hr/employees/new" variant="primary">
+                  Register joining
+                </LinkButton>
+              }
+            />
+          </PanelBody>
+        ) : (
+          <TableWrap>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Emp #</TH>
+                  <TH>Name</TH>
+                  <TH>Trade</TH>
+                  <TH>Joined</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {recent.map((employee) => (
+                  <TR key={employee.id}>
+                    <TD className="numeric">{employee.employeeNumber}</TD>
+                    <TD>
+                      <Link
+                        href={`/hr/employees/${employee.id}`}
+                        className="font-medium text-ink-900 underline-offset-2 hover:underline"
+                      >
+                        {employee.name}
+                      </Link>
+                    </TD>
+                    <TD>{employee.trade}</TD>
+                    <TD>{employee.dateOfJoin}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+        )}
+      </Panel>
+
+      <Panel>
+        <PanelHeader title="Iqama renewals" description="Within the next 60 days." />
+        <PanelBody>
+          {renewals.length === 0 ? (
+            <p className="text-xs text-ink-500">No renewals due in the next 60 days.</p>
+          ) : (
+            <ul className="space-y-2">
+              {renewals.slice(0, 8).map((employee) => (
+                <li key={employee.id} className="min-w-0">
+                  <Link
+                    href={`/hr/employees/${employee.id}`}
+                    className="text-xs font-medium text-ink-900 underline-offset-2 hover:underline"
+                  >
+                    {employee.name}
+                  </Link>
+                  <span className="block text-2xs text-ink-500">
+                    Expires {employee.iqamaExpiry}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
 
 interface QueueCard {
   label: string;
@@ -336,6 +438,42 @@ export default function DashboardPage() {
           },
         ];
 
+      case "HR":
+        return [
+          {
+            label: "Active employees",
+            value: db.employees.filter((e) => e.status === "ACTIVE").length,
+            hint: "On the current workforce",
+            tone: "accent",
+            icon: <Users />,
+            href: "/hr/employees",
+          },
+          {
+            label: "Iqama expiring",
+            value: expiringIqamas(db).length,
+            hint: "Within 60 days",
+            tone: "warn",
+            icon: <AlertTriangle />,
+            href: "/hr/employees",
+          },
+          {
+            label: "Joined this month",
+            value: db.employees.filter((e) => e.dateOfJoin.slice(0, 7) === todayIso().slice(0, 7)).length,
+            hint: "New joining records",
+            tone: "ok",
+            icon: <Users />,
+            href: "/hr/employees",
+          },
+          {
+            label: "Inactive",
+            value: db.employees.filter((e) => e.status === "INACTIVE").length,
+            hint: "Left; records retained",
+            tone: "neutral",
+            icon: <Users />,
+            href: "/hr/employees",
+          },
+        ];
+
       default:
         return [];
     }
@@ -449,7 +587,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
+      {role === "HR" ? <HrDashboardSections db={db} /> : null}
+
+      <div className={cn("grid gap-4 xl:grid-cols-[1fr_22rem]", role === "HR" && "hidden")}>
         <div className="space-y-4">
           <Panel>
             <PanelHeader

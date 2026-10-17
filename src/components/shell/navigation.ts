@@ -20,6 +20,8 @@ import {
   Scale,
   Send,
   ShieldCheck,
+  UserPlus,
+  Users,
 } from "lucide-react";
 
 import type { DemoRole } from "@/domain/enums";
@@ -38,6 +40,7 @@ import {
   awardQueue,
 } from "@/store/selectors";
 import { currentVersion } from "@/domain/rules";
+import { expiringIqamas } from "@/services/hrOperations";
 
 export interface NavItem {
   href: string;
@@ -222,6 +225,31 @@ export const NAV_GROUPS: NavGroup[] = [
         badge: (db) =>
           awardQueue(db).filter((a) => a.workOrder?.status === "FINALIZED" || a.handoverReady).length,
         description: "Kickoff minutes, PCP, PO and Operations handover",
+      },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      {
+        href: "/hr/employees",
+        // HR owns this; the MD sees it read-only. Nobody else has a reason to
+        // read salaries and passport numbers, so nobody else can open it.
+        roles: ["HR", "MD"],
+        label: "Employee Register",
+        icon: Users,
+        primaryFor: ["HR"],
+        // Counts the deadline HR actually chases: an iqama about to lapse
+        // stops someone working.
+        badge: (db) => expiringIqamas(db).length,
+        description: "Joining records, pay and contract details",
+      },
+      {
+        href: "/hr/employees/new",
+        roles: ["HR"],
+        label: "Employee Joining",
+        icon: UserPlus,
+        description: "Register a newly joined employee",
       },
     ],
   },

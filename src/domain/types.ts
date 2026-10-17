@@ -18,6 +18,7 @@
  * - Optional fields use `?` and are genuinely optional in the workflow.
  */
 
+import type { Employee } from "./hr";
 import type {
   ActionItemStatus,
   ApprovalDecision,
@@ -579,6 +580,8 @@ export interface DemoDatabase {
   handovers: Handover[];
   activities: ActivityRecord[];
   notifications: DemoNotification[];
+  /** HR module — see src/domain/hr.ts. */
+  employees: Employee[];
   /** Monotonic counters backing readable reference generation. */
   sequences: Record<string, number>;
 }
