@@ -113,8 +113,8 @@ export default function DemoPage() {
         />
         <PanelBody className="space-y-3">
           <DefinitionList cols={3}>
-            <KeyValue label="Storage">localStorage key `radwa-erp-demo`</KeyValue>
-            <KeyValue label="Persistence">Survives refresh in this browser only</KeyValue>
+            <KeyValue label="Storage">Supabase `workspace_state` (localStorage cache `radwa-erp-demo`)</KeyValue>
+            <KeyValue label="Persistence">Shared across every signed-in device</KeyValue>
             <KeyValue label="Next enquiry number">
               <span className="numeric">ENQ-{new Date().getUTCFullYear()}-{String((db.sequences.enquiry ?? 0) + 1).padStart(4, "0")}</span>
             </KeyValue>

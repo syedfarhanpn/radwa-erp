@@ -170,7 +170,7 @@ export default function NewEnquiryPage() {
             icon={<FilePlus2 />}
             title="Register a new enquiry"
             description="The enquiry reference is generated automatically and continues the existing numbering sequence."
-            actions={<Badge tone="warn">Demo — saved to this browser only</Badge>}
+            actions={<Badge tone="neutral">Shared across devices</Badge>}
           />
 
           <FormSection
@@ -501,8 +501,8 @@ export default function NewEnquiryPage() {
       </RoleGate>
 
       <Callout tone="neutral">
-        Records you create are stored in this browser only (localStorage) and are cleared when you reset the demo
-        data from the role menu.
+        Records you create are saved to the shared workspace, so they appear on every signed-in device. Clearing
+        them from the user menu clears them everywhere, not just here.
       </Callout>
     </div>
   );

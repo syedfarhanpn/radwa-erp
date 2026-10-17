@@ -93,6 +93,12 @@ export interface DemoState {
   syncMessage: string | null;
   /** Count of local changes the server has not confirmed yet. */
   pendingChanges: number;
+  /**
+   * Set when this device has work that predates syncing and the shared copy
+   * has work too, so neither can be adopted without destroying the other.
+   * The UI asks which to keep; nothing is overwritten until it is answered.
+   */
+  syncChoice: { local: WorkspaceSummary; server: WorkspaceSummary } | null;
 
   /** Verify credentials against Supabase, falling back to the local accounts. */
   signIn: (username: string, password: string) => Promise<ActionResult>;
@@ -104,6 +110,8 @@ export interface DemoState {
   startSync: () => Promise<void>;
   /** Push anything still pending, now. Used by the "Retry" affordance. */
   retrySync: () => Promise<void>;
+  /** Answer the "which copy?" prompt. */
+  resolveSyncChoice: (keep: "local" | "server") => Promise<void>;
 
   setRole: (role: DemoRole) => void;
   setActingUser: (userId: Id) => void;
@@ -155,6 +163,56 @@ const REQUIRED_COLLECTIONS: Array<keyof DemoDatabase> = [
 ];
 
 /**
+ * Collections that hold *work*, as opposed to the people and clients every
+ * seed starts with.
+ *
+ * Used to tell an empty workspace from one somebody has put hours into, which
+ * is the difference between safely overwriting it and destroying their day.
+ */
+const WORK_COLLECTIONS: Array<keyof DemoDatabase> = [
+  "enquiries",
+  "pursuitDecisions",
+  "assignments",
+  "tenderDocuments",
+  "surveys",
+  "estimates",
+  "boqLineItems",
+  "estimateApprovals",
+  "bidPackages",
+  "bidPackageDocuments",
+  "managementApprovals",
+  "clientSubmissions",
+  "followUpTasks",
+  "clientResponses",
+  "revisionRequests",
+  "awards",
+  "workOrders",
+  "kickoffMeetings",
+  "actionItems",
+  "pcpAppointments",
+  "purchaseOrders",
+  "handovers",
+  "activities",
+];
+
+function countWork(db: DemoDatabase): number {
+  return WORK_COLLECTIONS.reduce(
+    (total, key) => total + ((db[key] as unknown[] | undefined)?.length ?? 0),
+    0,
+  );
+}
+
+/** How much work a document holds, for the "which copy?" prompt. */
+export interface WorkspaceSummary {
+  records: number;
+  enquiries: number;
+}
+
+function summarise(db: DemoDatabase): WorkspaceSummary {
+  return { records: countWork(db), enquiries: db.enquiries?.length ?? 0 };
+}
+
+/**
  * Is this value a database this build can render?
  *
  * Applied to anything arriving from outside the running app — persisted state
@@ -179,6 +237,7 @@ export const useDemoStore = create<DemoState>()(
       syncStatus: "off",
       syncMessage: null,
       pendingChanges: 0,
+      syncChoice: null,
 
       signIn: async (username, password) => {
         // Why Supabase refused, kept so the fallback can say something true.
@@ -262,7 +321,11 @@ export const useDemoStore = create<DemoState>()(
       },
 
       startSync: startSync,
-      retrySync: flushNow,
+      // "Try again" must actually re-evaluate. Calling flush alone did nothing
+      // when sync had never started — the common case, since the usual reason
+      // to press it is that starting failed.
+      retrySync: retrySync,
+      resolveSyncChoice: resolveSyncChoice,
 
       setRole: (role) =>
         set({
@@ -277,6 +340,9 @@ export const useDemoStore = create<DemoState>()(
       // is uploaded like any other change, so it clears on every device.
       resetDemo: () => {
         pending.length = 0;
+        // Replaces the database outright, so there is no operation to replay —
+        // the flag is what tells `flush` there is still something to upload.
+        wholesaleChange = true;
         set({ db: freshSeed(), pendingChanges: 0 });
         void flushNow();
       },
@@ -382,11 +448,23 @@ interface PendingOp {
 /** Operations applied locally but not yet confirmed by the server. */
 const pending: PendingOp[] = [];
 
+/**
+ * Set when the local database was replaced wholesale rather than changed by an
+ * operation — "Clear all enquiries" is the only case today.
+ *
+ * Such a change has no pending operation to carry it, so without this flag
+ * `flush` would see an empty queue and upload nothing: the reset would apply
+ * on this device and silently leave every other device untouched.
+ */
+let wholesaleChange = false;
+
 /** Serializes uploads: two pushes must never be in flight at once. */
 let chain: Promise<void> = Promise.resolve();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribe: (() => void) | null = null;
 let started = false;
+/** Server copy held unapplied while the "which copy?" prompt is unanswered. */
+let heldServerSnapshot: { db: DemoDatabase; revision: number } | null = null;
 
 /** Syncing needs a real Supabase session; a local sign-in cannot write. */
 function canSync(): boolean {
@@ -421,7 +499,8 @@ async function flushNow(): Promise<void> {
 }
 
 async function flush(): Promise<void> {
-  if (!canSync() || pending.length === 0) return;
+  if (!canSync()) return;
+  if (pending.length === 0 && !wholesaleChange) return;
 
   const set = useDemoStore.setState;
   set({ syncStatus: "syncing" });
@@ -434,6 +513,7 @@ async function flush(): Promise<void> {
     if (outcome.status === "saved") {
       // Everything applied locally is now on the server.
       pending.length = 0;
+      wholesaleChange = false;
       set({
         revision: outcome.revision,
         syncStatus: "synced",
@@ -450,6 +530,14 @@ async function flush(): Promise<void> {
         syncMessage: outcome.message,
       });
       return;
+    }
+
+    if (wholesaleChange && pending.length === 0) {
+      // A reset is an explicit instruction to discard what was there, so a
+      // write that landed first does not survive it. Take the new revision and
+      // push our document again rather than rebasing onto what we are clearing.
+      set({ revision: outcome.revision });
+      continue;
     }
 
     // Another device wrote first. Rebuild on top of their document.
@@ -563,11 +651,54 @@ async function startSync(): Promise<void> {
       return;
     }
   } else {
-    // The server copy wins over whatever this browser cached. Anything this
-    // device did while offline is still in `pending` and is replayed on top.
-    rebaseOnto(snapshot.db, snapshot.revision);
-    if (pending.length > 0) await flush();
-    else set({ syncStatus: "synced", syncMessage: null });
+    const state = useDemoStore.getState();
+    const local = summarise(state.db);
+    const server = summarise(snapshot.db);
+
+    // A device that has never synced holds work nobody recorded as a pending
+    // operation — it was done before syncing existed. Adopting the server copy
+    // would delete it with no way back, so the two cases where that could
+    // happen are handled before the normal "server wins" rule.
+    const firstContact = state.revision === 0 && pending.length === 0;
+
+    if (firstContact && local.records > 0 && server.records === 0) {
+      // The shared copy is an empty shell — someone opened the app on a fresh
+      // browser and initialised it. This device's work is the only work there
+      // is, so it goes up rather than being wiped.
+      const outcome = await pushWorkspace(state.db, snapshot.revision);
+      if (outcome.status === "saved") {
+        set({
+          revision: outcome.revision,
+          syncStatus: "synced",
+          syncMessage: `Uploaded this device's ${local.records} records to the empty shared workspace.`,
+        });
+      } else if (outcome.status === "stale") {
+        rebaseOnto(outcome.db, outcome.revision);
+      } else {
+        set({ syncStatus: "blocked", syncMessage: outcome.message });
+        started = false;
+        return;
+      }
+    } else if (firstContact && local.records > 0 && server.records > 0) {
+      // Both hold real work and neither is derived from the other. There is no
+      // correct automatic answer, and guessing wrong is unrecoverable, so the
+      // person decides. Nothing is written until they do.
+      heldServerSnapshot = { db: snapshot.db, revision: snapshot.revision };
+      set({
+        syncStatus: "blocked",
+        syncMessage: "This device and the shared workspace both hold work. Choose which to keep.",
+        syncChoice: { local, server },
+      });
+      started = false;
+      return;
+    } else {
+      // The ordinary case: the server copy wins over whatever this browser
+      // cached. Anything this device did while offline is still in `pending`
+      // and is replayed on top.
+      rebaseOnto(snapshot.db, snapshot.revision);
+      if (pending.length > 0) await flush();
+      else set({ syncStatus: "synced", syncMessage: null });
+    }
   }
 
   unsubscribe?.();
@@ -586,6 +717,64 @@ function stopSync(): void {
   unsubscribe?.();
   unsubscribe = null;
   started = false;
+  heldServerSnapshot = null;
+}
+
+/** Re-attempt whatever failed, whether that was starting or uploading. */
+async function retrySync(): Promise<void> {
+  if (!started) {
+    await startSync();
+    return;
+  }
+  await flushNow();
+}
+
+/**
+ * Answer the "this device and the server both hold work" prompt.
+ *
+ * `local` uploads this device's copy over the shared one; `server` adopts the
+ * shared copy and discards this device's. Both are destructive in one
+ * direction, which is exactly why neither happens without being asked.
+ */
+async function resolveSyncChoice(keep: "local" | "server"): Promise<void> {
+  const held = heldServerSnapshot;
+  if (!held) return;
+  heldServerSnapshot = null;
+
+  const set = useDemoStore.setState;
+  set({ syncChoice: null, syncStatus: "syncing", syncMessage: null });
+
+  if (keep === "server") {
+    rebaseOnto(held.db, held.revision);
+    set({ syncStatus: "synced", syncMessage: "Using the shared copy." });
+  } else {
+    set({ revision: held.revision });
+    const outcome = await pushWorkspace(useDemoStore.getState().db, held.revision);
+    if (outcome.status === "saved") {
+      set({
+        revision: outcome.revision,
+        syncStatus: "synced",
+        syncMessage: "This device's copy is now the shared one.",
+      });
+    } else if (outcome.status === "stale") {
+      rebaseOnto(outcome.db, outcome.revision);
+    } else {
+      set({ syncStatus: "blocked", syncMessage: outcome.message });
+      return;
+    }
+  }
+
+  started = true;
+  unsubscribe?.();
+  unsubscribe = subscribeToWorkspace(() => {
+    void enqueue(async () => {
+      const incoming = await pullWorkspace();
+      if (!incoming?.db) return;
+      if (incoming.revision <= useDemoStore.getState().revision) return;
+      rebaseOnto(incoming.db, incoming.revision);
+      if (pending.length > 0) await flush();
+    });
+  });
 }
 
 /* ------------------------------------------------------------- helpers --- */

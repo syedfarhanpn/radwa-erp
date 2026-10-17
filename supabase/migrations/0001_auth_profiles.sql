@@ -151,6 +151,31 @@ begin
      where id = v_id;
   end if;
 
+  -- A password sign-in resolves the user through their 'email' identity row.
+  -- Without it the account exists but cannot authenticate, and the auth
+  -- service reports "Database error querying schema". The column shape differs
+  -- between Supabase versions, so both are handled.
+  if not exists (select 1 from auth.identities i where i.user_id = v_id and i.provider = 'email') then
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'auth' and table_name = 'identities' and column_name = 'provider_id'
+    ) then
+      insert into auth.identities (id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at)
+      values (
+        extensions.gen_random_uuid(), v_id,
+        jsonb_build_object('sub', v_id::text, 'email', v_email, 'email_verified', true, 'phone_verified', false),
+        'email', v_id::text, now(), now(), now()
+      );
+    else
+      insert into auth.identities (id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+      values (
+        v_id::text, v_id,
+        jsonb_build_object('sub', v_id::text, 'email', v_email, 'email_verified', true, 'phone_verified', false),
+        'email', now(), now(), now()
+      );
+    end if;
+  end if;
+
   insert into public.profiles (
     id, username, full_name, directory_user_id, role, department, is_management_team, is_md
   ) values (
