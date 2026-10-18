@@ -11,6 +11,7 @@
  * that only surface when a man is standing at an airport.
  */
 
+import type { DemoRole } from "@/domain/enums";
 import type { ActionResult, DemoDatabase, Id } from "@/domain/types";
 import type { OpContext } from "./operations";
 import {
@@ -35,6 +36,62 @@ import {
 import { makeId } from "@/lib/utils";
 import { todayIso } from "@/lib/dates";
 
+
+/* ========================================================= who decides === */
+
+/**
+ * The PCP running the project an employee is currently posted to.
+ *
+ * Followed through the tender side: employee → work order → enquiry → the PCP
+ * appointed at handover. Undefined when the employee is on standby — no
+ * posting, no work order, or no PCP appointed yet — and standby is the case
+ * that needs no release approval at all.
+ */
+export function holdingPcpFor(db: DemoDatabase, employeeId: Id): Id | undefined {
+  const employee = db.employees.find((e) => e.id === employeeId);
+  if (!employee?.assignedWorkOrderId) return undefined;
+
+  const workOrder = db.workOrders.find((w) => w.id === employee.assignedWorkOrderId);
+  if (!workOrder) return undefined;
+
+  return db.pcpAppointments.find((p) => p.enquiryId === workOrder.enquiryId)?.appointeeId;
+}
+
+/** True when nobody is running a project this employee is posted to. */
+export function isOnStandby(db: DemoDatabase, employeeId: Id): boolean {
+  return holdingPcpFor(db, employeeId) === undefined;
+}
+
+/**
+ * May this person decide this leave?
+ *
+ * The holding PCP decides. HR decides only when there is no holding PCP,
+ * because otherwise nobody could. HR cannot overrule a PCP who does have the
+ * employee — that would make the routing decorative.
+ */
+export function canDecideLeave(leave: LeaveRequest, actorId: Id, role: DemoRole): boolean {
+  if (leave.approverPcpId) return actorId === leave.approverPcpId;
+  return role === "HR";
+}
+
+export function canDecideMovement(movement: EmployeeMovement, actorId: Id, role: DemoRole): boolean {
+  if (movement.approverPcpId) return actorId === movement.approverPcpId;
+  return role === "HR";
+}
+
+/** Leave and movements this PCP has to decide on. */
+export function awaitingPcp(db: DemoDatabase, pcpId: Id): {
+  leave: LeaveRequest[];
+  movements: EmployeeMovement[];
+} {
+  return {
+    leave: db.leaveRequests.filter((l) => l.status === "REQUESTED" && l.approverPcpId === pcpId),
+    movements: db.employeeMovements.filter(
+      (m) => m.status === "REQUESTED" && m.approverPcpId === pcpId,
+    ),
+  };
+}
+
 /* ================================================================ leave === */
 
 export interface LeaveRequestInput {
@@ -45,6 +102,9 @@ export interface LeaveRequestInput {
   reason?: string;
   replacementRequired: boolean;
   replacementEmployeeId?: Id;
+  /** Who asked, and on what date — distinct from when HR keyed it in. */
+  requestedByName?: string;
+  requestedOnDate?: string;
 }
 
 /** Leaves that still tie the employee up — anything not finished or refused. */
@@ -118,6 +178,11 @@ export function requestLeave(
     requestedDays: days ?? 0,
     reason: input.reason?.trim() || undefined,
     requestedAt: now,
+    requestedByName: input.requestedByName?.trim() || employee.name,
+    requestedOnDate: input.requestedOnDate || undefined,
+    // Routed at the moment of raising, so a later change of posting cannot
+    // move the decision out from under whoever is already considering it.
+    approverPcpId: holdingPcpFor(db, input.employeeId),
     replacementRequired: input.replacementRequired,
     replacementEmployeeId: input.replacementRequired ? input.replacementEmployeeId : undefined,
     updatedAt: now,
@@ -142,6 +207,15 @@ export function decideLeave(db: DemoDatabase, ctx: OpContext, input: LeaveDecisi
   if (!leave) return { ok: false, message: "That leave request no longer exists." };
   if (leave.status !== "REQUESTED") {
     return { ok: false, message: `${leave.reference} has already been decided.` };
+  }
+  if (!canDecideLeave(leave, ctx.actorId, ctx.actorRole)) {
+    const holder = db.users.find((u) => u.id === leave.approverPcpId);
+    return {
+      ok: false,
+      message: holder
+        ? `Only ${holder.name}, the PCP for this employee's project, can decide ${leave.reference}.`
+        : `${leave.reference} is not yours to decide.`,
+    };
   }
 
   const now = new Date().toISOString();
@@ -411,11 +485,19 @@ export function requestMovement(
   db.sequences.movement = sequence;
   const now = new Date().toISOString();
 
+  // A standby employee belongs to no project, so there is nobody to ask for
+  // their release: the requesting PCP simply takes them. One with a posting
+  // has to be released by the PCP running it.
+  const approverPcpId = holdingPcpFor(db, input.employeeId);
+
   const movement: EmployeeMovement = {
     id: makeId("mv"),
     employeeId: input.employeeId,
     reference: `MV-${new Date().getUTCFullYear()}-${String(sequence).padStart(4, "0")}`,
-    status: "REQUESTED",
+    status: approverPcpId ? "REQUESTED" : "ACCEPTED",
+    approverPcpId,
+    autoAccepted: !approverPcpId,
+    agreedReleaseDate: approverPcpId ? undefined : input.requiredByDate || input.requestedDate,
     from: { ...input.from },
     to: { ...input.to },
     requestedBy: input.requestedBy.trim(),
@@ -432,9 +514,13 @@ export function requestMovement(
   };
 
   db.employeeMovements.push(movement);
+
+  const approver = db.users.find((u) => u.id === approverPcpId);
   return {
     ok: true,
-    message: `${movement.reference} raised for ${employee.name}.`,
+    message: approver
+      ? `${movement.reference} raised — waiting on ${approver.name} to release ${employee.name}.`
+      : `${movement.reference} raised. ${employee.name} is on standby, so no release approval is needed.`,
     movementId: movement.id,
   };
 }
@@ -456,6 +542,15 @@ export function decideMovement(
   if (!movement) return { ok: false, message: "That movement no longer exists." };
   if (movement.status !== "REQUESTED") {
     return { ok: false, message: `${movement.reference} has already been decided.` };
+  }
+  if (!canDecideMovement(movement, ctx.actorId, ctx.actorRole)) {
+    const holder = db.users.find((u) => u.id === movement.approverPcpId);
+    return {
+      ok: false,
+      message: holder
+        ? `Only ${holder.name}, the PCP holding this employee, can release them.`
+        : `${movement.reference} is not yours to decide.`,
+    };
   }
 
   const now = new Date().toISOString();

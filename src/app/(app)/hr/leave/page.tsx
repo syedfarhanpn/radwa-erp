@@ -37,7 +37,8 @@ import {
   recordLeaveReturn,
   requestLeave,
 } from "@/services/hrLeaveOperations";
-import { useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
+import { useActingUser, useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
+import { canDecideLeave, holdingPcpFor } from "@/services/hrLeaveOperations";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, FieldGrid, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
@@ -66,11 +67,17 @@ export default function LeaveRegisterPage() {
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
+  // HR owns the register; a PCP comes here only to decide on their own
+  // project's people. Both see the screen, with different powers.
+  const actingUser = useActingUser();
+  const canRaise = role === "HR";
   const canEdit = role === "HR";
   const today = todayIso();
   const active = activeId ? db.leaveRequests.find((l) => l.id === activeId) : undefined;
 
   const rows = db.leaveRequests
+    // A PCP sees the people they are responsible for, not the whole company.
+    .filter((leave) => role !== "MCP" || leave.approverPcpId === actingUser.id)
     .filter((leave) => {
       if (filter === "ALL") return true;
       if (filter === "OPEN") {
@@ -104,12 +111,14 @@ export default function LeaveRegisterPage() {
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-ink-900">Employee leave</h1>
           <p className="mt-0.5 text-xs text-ink-500">
-            {canEdit
-              ? "Requests, approvals, travel and returns."
-              : "Read-only view. HR maintains these records."}
+            {role === "HR"
+              ? "Requests, approvals, travel and returns. Approval sits with the PCP running the employee's project."
+              : role === "MCP"
+                ? "Leave awaiting your approval, for employees on your project."
+                : "Read-only view. HR maintains these records."}
           </p>
         </div>
-        {canEdit && db.employees.length > 0 ? (
+        {canRaise && db.employees.length > 0 ? (
           <Button onClick={() => { setFieldErrors({}); setDialog("new"); }}>
             <Plus className="size-3.5" aria-hidden />
             Request leave
@@ -201,6 +210,12 @@ export default function LeaveRegisterPage() {
                         leave={leave}
                         employeeName={employeeName(leave.employeeId)}
                         canEdit={canEdit}
+                        canDecide={canDecideLeave(leave, actingUser.id, role)}
+                        approverName={
+                          leave.approverPcpId
+                            ? db.users.find((u) => u.id === leave.approverPcpId)?.name
+                            : undefined
+                        }
                         today={today}
                         onAction={(kind) => {
                           setFieldErrors({});
@@ -273,6 +288,8 @@ function LeaveRow({
   leave,
   employeeName,
   canEdit,
+  canDecide,
+  approverName,
   today,
   onAction,
   onCancel,
@@ -280,6 +297,9 @@ function LeaveRow({
   leave: LeaveRequest;
   employeeName: string;
   canEdit: boolean;
+  /** Whether the viewer is the one whose approval this needs. */
+  canDecide: boolean;
+  approverName?: string;
   today: string;
   onAction: (kind: Exclude<DialogKind, "new" | null>) => void;
   onCancel: () => void;
@@ -316,21 +336,29 @@ function LeaveRow({
         </Badge>
       </TD>
       <TD>
-        {!canEdit ? (
+        {!canEdit && !canDecide ? (
           <span className="text-2xs text-ink-400">—</span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {leave.status === "REQUESTED" ? (
               <>
-                <Button size="sm" onClick={() => onAction("decide")}>
-                  Decide
-                </Button>
-                <Button size="sm" variant="secondary" onClick={onCancel}>
-                  Cancel
-                </Button>
+                {canDecide ? (
+                  <Button size="sm" onClick={() => onAction("decide")}>
+                    Decide
+                  </Button>
+                ) : (
+                  <span className="text-2xs text-ink-500">
+                    With {approverName ?? "the PCP"}
+                  </span>
+                )}
+                {canEdit ? (
+                  <Button size="sm" variant="secondary" onClick={onCancel}>
+                    Cancel
+                  </Button>
+                ) : null}
               </>
             ) : null}
-            {leave.status === "APPROVED" ? (
+            {leave.status === "APPROVED" && canEdit ? (
               <>
                 <Button size="sm" onClick={() => onAction("depart")}>
                   Record departure
@@ -340,7 +368,7 @@ function LeaveRow({
                 </Button>
               </>
             ) : null}
-            {leave.status === "DEPARTED" ? (
+            {leave.status === "DEPARTED" && canEdit ? (
               <>
                 <Button size="sm" onClick={() => onAction("return")}>
                   Record return
@@ -360,6 +388,20 @@ function LeaveRow({
   );
 }
 
+/**
+ * Who this request will go to, said before it is raised.
+ *
+ * Routing that is only visible after the fact is routing nobody trusts.
+ */
+function describeRouting(db: ReturnType<typeof useDb>, employeeId: string): string {
+  if (!employeeId) return "";
+  const pcpId = holdingPcpFor(db, employeeId);
+  const pcp = pcpId ? db.users.find((u) => u.id === pcpId) : undefined;
+  return pcp
+    ? "Approval goes to " + pcp.name + ", the PCP on their project."
+    : "On standby — no project PCP, so HR decides.";
+}
+
 /* ------------------------------------------------------------- dialogs --- */
 
 function NewLeaveDialog({
@@ -377,6 +419,8 @@ function NewLeaveDialog({
     requestedStartDate: string;
     requestedReturnDate: string;
     reason?: string;
+    requestedByName?: string;
+    requestedOnDate?: string;
     replacementRequired: boolean;
     replacementEmployeeId?: string;
   }) => void;
@@ -387,6 +431,8 @@ function NewLeaveDialog({
   const [start, setStart] = React.useState(todayIso());
   const [end, setEnd] = React.useState("");
   const [reason, setReason] = React.useState("");
+  const [requestedByName, setRequestedByName] = React.useState("");
+  const [requestedOnDate, setRequestedOnDate] = React.useState(todayIso());
   const [replacementRequired, setReplacementRequired] = React.useState(false);
   const [replacementEmployeeId, setReplacement] = React.useState("");
 
@@ -412,6 +458,8 @@ function NewLeaveDialog({
                 requestedStartDate: start,
                 requestedReturnDate: end,
                 reason,
+                requestedByName,
+                requestedOnDate,
                 replacementRequired,
                 replacementEmployeeId: replacementRequired ? replacementEmployeeId : undefined,
               })
@@ -424,7 +472,12 @@ function NewLeaveDialog({
     >
       <div className="space-y-3">
         <FieldGrid>
-          <Field label="Employee" htmlFor="employeeId" required>
+          <Field
+            label="Employee"
+            htmlFor="employeeId"
+            required
+            hint={describeRouting(db, employeeId)}
+          >
             <Select id="employeeId" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
               {activeEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
@@ -476,6 +529,33 @@ function NewLeaveDialog({
               value={end}
               invalid={Boolean(fieldErrors.requestedReturnDate)}
               onChange={(e) => setEnd(e.target.value)}
+            />
+          </Field>
+        </FieldGrid>
+
+        <FieldGrid>
+          <Field
+            label="Requested by"
+            htmlFor="requestedByName"
+            hint="Defaults to the employee. Change it if someone asked on their behalf."
+          >
+            <Input
+              id="requestedByName"
+              value={requestedByName}
+              onChange={(e) => setRequestedByName(e.target.value)}
+              placeholder="The employee"
+            />
+          </Field>
+          <Field
+            label="Date requested"
+            htmlFor="requestedOnDate"
+            hint="When they asked, not when this was keyed in."
+          >
+            <Input
+              id="requestedOnDate"
+              type="date"
+              value={requestedOnDate}
+              onChange={(e) => setRequestedOnDate(e.target.value)}
             />
           </Field>
         </FieldGrid>

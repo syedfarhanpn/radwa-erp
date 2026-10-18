@@ -172,11 +172,22 @@ and authorize server-side (`src/store/visibility.ts` has the detail).
 | Kickoff & Handover | ● | ● | ● | | | | |
 | Employee Register | | ◐ | | | | | ● |
 | Employee Joining | | | | | | | ● |
-| Employee Leave | | ◐ | | | | | ● |
-| Employee Movement | | ◐ | | | | | ● |
+| Employee Leave | | ◐ | ◑ | | | | ● |
+| Employee Movement | | ◐ | ◑ | | | | ● |
 
-● full access · ◐ read-only. The MD can read the employee register; only HR
-can add or change a record, and the URL is guarded, not just the sidebar.
+● full access · ◐ read-only · ◑ their own approvals only.
+
+The MD can read the HR screens; only HR adds or changes a record, and the URL
+is guarded, not just the sidebar.
+
+**Leave and release are approved by the PCP running the employee's project**,
+not by HR. The approver is resolved when the request is raised — employee →
+work order → enquiry → the PCP appointed at handover — and stored on the
+record, so a later change of posting cannot move a decision out from under
+whoever is already considering it. An employee on standby has no project PCP:
+HR decides their leave, and a release needs no approval at all, which is what
+lets a PCP pick up an idle employee without negotiation. HR cannot overrule a
+PCP who holds the employee, and a PCP cannot release someone to themselves.
 
 The matrix lives in one place: the `roles` allow-list on each item in
 `src/components/shell/navigation.ts`. Hiding an item from the sidebar also

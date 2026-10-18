@@ -43,7 +43,7 @@ import {
 } from "@/store/selectors";
 import { currentVersion } from "@/domain/rules";
 import { expiringIqamas } from "@/services/hrOperations";
-import { overdueReturns, pendingLeave, pendingMovements } from "@/services/hrLeaveOperations";
+import { awaitingPcp, overdueReturns, pendingLeave, pendingMovements } from "@/services/hrLeaveOperations";
 
 export interface NavItem {
   href: string;
@@ -266,21 +266,28 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/hr/leave",
-        roles: ["HR", "MD"],
+        // PCPs decide leave for their own project's people, so the MCP role
+        // needs the screen. The employee register stays HR + MD: a PCP has no
+        // business reading salaries and passport numbers.
+        roles: ["HR", "MD", "MCP"],
         label: "Employee Leave",
         icon: CalendarClock,
         primaryFor: ["HR"],
         // Requests waiting on a decision, plus anyone already overdue back.
         // Both are things that stop being fixable if nobody looks.
-        badge: (db) => pendingLeave(db).length + overdueReturns(db).length,
+        badge: (db, role, userId) =>
+          role === "MCP"
+            ? awaitingPcp(db, userId).leave.length
+            : pendingLeave(db).length + overdueReturns(db).length,
         description: "Requests, approvals, travel and returns",
       },
       {
         href: "/hr/movements",
-        roles: ["HR", "MD"],
+        roles: ["HR", "MD", "MCP"],
         label: "Employee Movement",
         icon: ArrowLeftRight,
-        badge: (db) => pendingMovements(db).length,
+        badge: (db, role, userId) =>
+          role === "MCP" ? awaitingPcp(db, userId).movements.length : pendingMovements(db).length,
         description: "Release requests and site transfers",
       },
     ],

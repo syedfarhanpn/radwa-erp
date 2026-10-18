@@ -113,7 +113,18 @@ export interface LeaveRequest {
   requestedReturnDate: IsoDate;
   requestedDays: number;
   reason?: string;
+  /** When HR keyed the record in. */
   requestedAt: IsoTimestamp;
+  /** Who asked for the leave, and when they asked — not when HR typed it. */
+  requestedByName?: string;
+  requestedOnDate?: IsoDate;
+
+  /**
+   * The PCP whose approval this needs: the one running the project the
+   * employee is posted to. Undefined when the employee is on standby, in
+   * which case there is no project to ask and HR decides.
+   */
+  approverPcpId?: Id;
 
   /* whether a stand-in is needed while they are away */
   replacementRequired: boolean;
@@ -316,6 +327,15 @@ export interface EmployeeMovement {
   requiredByDate?: IsoDate;
   /** Days the receiving project expects to keep them. */
   assignmentDays?: number;
+
+  /**
+   * The PCP who must release the employee — the one running the project they
+   * are currently posted to. Undefined when the employee is on standby:
+   * nobody holds them, so there is nobody to ask.
+   */
+  approverPcpId?: Id;
+  /** True when there was no holding PCP and the request needed no release. */
+  autoAccepted?: boolean;
 
   /* the decision, by whoever currently holds them */
   projectInChargeName?: string;

@@ -36,7 +36,8 @@ import {
   recordMovementRelease,
   requestMovement,
 } from "@/services/hrLeaveOperations";
-import { useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
+import { useActingUser, useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
+import { canDecideMovement, holdingPcpFor } from "@/services/hrLeaveOperations";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, FieldGrid, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
@@ -65,11 +66,22 @@ export default function MovementRegisterPage() {
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
+  const actingUser = useActingUser();
+  // A PCP raises requests for people they want, and decides releases for
+  // people they hold. HR runs the register and records what happened.
+  const canRaise = role === "HR" || role === "MCP";
   const canEdit = role === "HR";
   const today = todayIso();
   const active = activeId ? db.employeeMovements.find((m) => m.id === activeId) : undefined;
 
   const rows = db.employeeMovements
+    // A PCP sees what they asked for and what they must release.
+    .filter(
+      (movement) =>
+        role !== "MCP" ||
+        movement.approverPcpId === actingUser.id ||
+        movement.createdBy === actingUser.id,
+    )
     .filter((movement) => {
       if (filter === "ALL") return true;
       if (filter === "OPEN") {
@@ -103,12 +115,14 @@ export default function MovementRegisterPage() {
         <div className="min-w-0">
           <h1 className="text-base font-semibold text-ink-900">Employee movement</h1>
           <p className="mt-0.5 text-xs text-ink-500">
-            {canEdit
-              ? "Release requests, approvals and site transfers."
-              : "Read-only view. HR maintains these records."}
+            {role === "HR"
+              ? "Release requests, approvals and site transfers. A release is approved by the PCP holding the employee."
+              : role === "MCP"
+                ? "Employees you have asked for, and releases awaiting your approval."
+                : "Read-only view. HR maintains these records."}
           </p>
         </div>
-        {canEdit && db.employees.length > 0 ? (
+        {canRaise && db.employees.length > 0 ? (
           <Button onClick={() => { setFieldErrors({}); setDialog("new"); }}>
             <Plus className="size-3.5" aria-hidden />
             Request movement
@@ -200,6 +214,12 @@ export default function MovementRegisterPage() {
                         movement={movement}
                         employeeName={employeeName(movement.employeeId)}
                         canEdit={canEdit}
+                        canDecide={canDecideMovement(movement, actingUser.id, role)}
+                        approverName={
+                          movement.approverPcpId
+                            ? db.users.find((u) => u.id === movement.approverPcpId)?.name
+                            : undefined
+                        }
                         today={today}
                         onAction={(kind) => {
                           setFieldErrors({});
@@ -265,6 +285,8 @@ function MovementRow({
   movement,
   employeeName,
   canEdit,
+  canDecide,
+  approverName,
   today,
   onAction,
   onCancel,
@@ -272,6 +294,8 @@ function MovementRow({
   movement: EmployeeMovement;
   employeeName: string;
   canEdit: boolean;
+  canDecide: boolean;
+  approverName?: string;
   today: string;
   onAction: (kind: Exclude<DialogKind, "new" | null>) => void;
   onCancel: () => void;
@@ -294,21 +318,27 @@ function MovementRow({
         </Badge>
       </TD>
       <TD>
-        {!canEdit ? (
+        {!canEdit && !canDecide ? (
           <span className="text-2xs text-ink-400">—</span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {movement.status === "REQUESTED" ? (
               <>
-                <Button size="sm" onClick={() => onAction("decide")}>
-                  Decide
-                </Button>
-                <Button size="sm" variant="secondary" onClick={onCancel}>
-                  Cancel
-                </Button>
+                {canDecide ? (
+                  <Button size="sm" onClick={() => onAction("decide")}>
+                    Decide
+                  </Button>
+                ) : (
+                  <span className="text-2xs text-ink-500">With {approverName ?? "the PCP"}</span>
+                )}
+                {canEdit ? (
+                  <Button size="sm" variant="secondary" onClick={onCancel}>
+                    Cancel
+                  </Button>
+                ) : null}
               </>
             ) : null}
-            {movement.status === "ACCEPTED" ? (
+            {movement.status === "ACCEPTED" && canEdit ? (
               <>
                 <Button size="sm" onClick={() => onAction("release")}>
                   Record release
@@ -318,7 +348,7 @@ function MovementRow({
                 </Button>
               </>
             ) : null}
-            {movement.status === "RELEASED" ? (
+            {movement.status === "RELEASED" && canEdit ? (
               <Button size="sm" onClick={() => onAction("arrive")}>
                 Record arrival
               </Button>
@@ -431,7 +461,19 @@ function NewMovementDialog({
     >
       <div className="space-y-4">
         <FieldGrid>
-          <Field label="Employee" htmlFor="employeeId" required>
+          <Field
+            label="Employee"
+            htmlFor="employeeId"
+            required
+            hint={(() => {
+              if (!employeeId) return "";
+              const pcpId = holdingPcpFor(db, employeeId);
+              const pcp = pcpId ? db.users.find((u) => u.id === pcpId) : undefined;
+              return pcp
+                ? "Held by " + pcp.name + " — they must approve the release."
+                : "On standby — no release approval needed.";
+            })()}
+          >
             <Select id="employeeId" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
               {activeEmployees.map((item) => (
                 <option key={item.id} value={item.id}>
