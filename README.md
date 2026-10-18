@@ -134,7 +134,7 @@ All nineteen accounts use the same password: **`radwa2026`** — defined as
 | MCP / Project Manager | Akshai, Sandeep, PK | Surveys, Submission & Follow-up, Kickoff |
 | Surveyor | Majid Al Balushi, Imran Shaikh | Site Surveys |
 | Department Reviewer | Technical, Commercial, Planning, Procurement, HSE, Quality, HR/Admin | Document Reviews |
-| HR Manager | Nadia Rahman | Employee Register, Employee Joining |
+| HR Manager | Nadia Rahman | Employee Register, Joining, Leave, Movement |
 
 Within a role you can also switch *which person* is acting — essential for
 Department Reviewer (seven departments), for MCP and Estimator (whose views are
@@ -172,6 +172,8 @@ and authorize server-side (`src/store/visibility.ts` has the detail).
 | Kickoff & Handover | ● | ● | ● | | | | |
 | Employee Register | | ◐ | | | | | ● |
 | Employee Joining | | | | | | | ● |
+| Employee Leave | | ◐ | | | | | ● |
+| Employee Movement | | ◐ | | | | | ● |
 
 ● full access · ◐ read-only. The MD can read the employee register; only HR
 can add or change a record, and the URL is guarded, not just the sidebar.

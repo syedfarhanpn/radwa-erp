@@ -61,10 +61,12 @@ export function createSeedDatabase(): DemoDatabase {
     activities: [],
     notifications: [],
     employees: [],
+    leaveRequests: [],
+    employeeMovements: [],
 
     // Reference numbering starts from zero: the first enquiry registered is
     // ENQ-<year>-0001 and the first work order WO-<year>-0001.
     // Employee numbering starts at 1001, as in the business's HR workbook.
-    sequences: { enquiry: 0, workOrder: 0, employee: 1000 },
+    sequences: { enquiry: 0, workOrder: 0, employee: 1000, leave: 0, movement: 0 },
   };
 }

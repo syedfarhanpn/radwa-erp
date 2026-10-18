@@ -12,6 +12,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  CalendarClock,
   ClipboardCheck,
   ClipboardList,
   FileStack,
@@ -31,6 +32,13 @@ import { formatMoneyCompact } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { daysUntil, todayIso } from "@/lib/dates";
 import { expiringIqamas } from "@/services/hrOperations";
+import {
+  employeesOnLeave,
+  overdueAssignments,
+  overdueReturns,
+  pendingLeave,
+  pendingMovements,
+} from "@/services/hrLeaveOperations";
 import { useActingUser, useActiveRole, useDb } from "@/store/useDemoStore";
 import {
   assignmentQueue,
@@ -133,6 +141,18 @@ function HrDashboardSections({ db }: { db: DemoDatabase }) {
         )}
       </Panel>
 
+      <div className="space-y-4">
+      <Panel>
+        <PanelHeader title="Open right now" description="What needs a decision or a chase." />
+        <PanelBody className="space-y-2">
+          <OpenCount label="Leave awaiting decision" value={pendingLeave(db).length} href="/hr/leave" />
+          <OpenCount label="Employees on leave" value={employeesOnLeave(db).length} href="/hr/leave" />
+          <OpenCount label="Overdue returns" value={overdueReturns(db).length} href="/hr/leave" tone="bad" />
+          <OpenCount label="Movements awaiting decision" value={pendingMovements(db).length} href="/hr/movements" />
+          <OpenCount label="Assignments overdue" value={overdueAssignments(db).length} href="/hr/movements" tone="bad" />
+        </PanelBody>
+      </Panel>
+
       <Panel>
         <PanelHeader title="Iqama renewals" description="Within the next 60 days." />
         <PanelBody>
@@ -157,7 +177,39 @@ function HrDashboardSections({ db }: { db: DemoDatabase }) {
           )}
         </PanelBody>
       </Panel>
+      </div>
     </div>
+  );
+}
+
+/** One line of the HR "open right now" list. Zero is shown, not hidden —
+ *  "nothing waiting" is the answer someone came to the dashboard for. */
+function OpenCount({
+  label,
+  value,
+  href,
+  tone = "neutral",
+}: {
+  label: string;
+  value: number;
+  href: string;
+  tone?: "neutral" | "bad";
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between gap-3 rounded-control px-2 py-1.5 text-xs transition-colors hover:bg-ink-50"
+    >
+      <span className="min-w-0 text-ink-700">{label}</span>
+      <span
+        className={cn(
+          "numeric shrink-0 font-semibold",
+          value === 0 ? "text-ink-400" : tone === "bad" ? "text-bad-600" : "text-ink-900",
+        )}
+      >
+        {value}
+      </span>
+    </Link>
   );
 }
 
@@ -457,20 +509,20 @@ export default function DashboardPage() {
             href: "/hr/employees",
           },
           {
-            label: "Joined this month",
-            value: db.employees.filter((e) => e.dateOfJoin.slice(0, 7) === todayIso().slice(0, 7)).length,
-            hint: "New joining records",
-            tone: "ok",
-            icon: <Users />,
-            href: "/hr/employees",
+            label: "Leave to decide",
+            value: pendingLeave(db).length,
+            hint: "Requests awaiting approval",
+            tone: "warn",
+            icon: <CalendarClock />,
+            href: "/hr/leave",
           },
           {
-            label: "Inactive",
-            value: db.employees.filter((e) => e.status === "INACTIVE").length,
-            hint: "Left; records retained",
-            tone: "neutral",
-            icon: <Users />,
-            href: "/hr/employees",
+            label: "Overdue returns",
+            value: overdueReturns(db).length,
+            hint: "Away past their due-back date",
+            tone: "bad",
+            icon: <AlertTriangle />,
+            href: "/hr/leave",
           },
         ];
 

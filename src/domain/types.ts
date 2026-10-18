@@ -19,6 +19,7 @@
  */
 
 import type { Employee } from "./hr";
+import type { EmployeeMovement, LeaveRequest } from "./hrLeave";
 import type {
   ActionItemStatus,
   ApprovalDecision,
@@ -582,6 +583,9 @@ export interface DemoDatabase {
   notifications: DemoNotification[];
   /** HR module — see src/domain/hr.ts. */
   employees: Employee[];
+  /** HR module — see src/domain/hrLeave.ts. */
+  leaveRequests: LeaveRequest[];
+  employeeMovements: EmployeeMovement[];
   /** Monotonic counters backing readable reference generation. */
   sequences: Record<string, number>;
 }

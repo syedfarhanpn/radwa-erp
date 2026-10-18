@@ -68,6 +68,8 @@ function buildScope(db: DemoDatabase, role: DemoRole, userId: Id): DemoDatabase 
     // narrowed here (Estimator, MCP) cannot open it at all, so there is
     // nothing to filter.
     employees: db.employees,
+    leaveRequests: db.leaveRequests,
+    employeeMovements: db.employeeMovements,
 
     enquiries: db.enquiries.filter((e) => visible.has(e.id)),
     pursuitDecisions: byEnquiry(db.pursuitDecisions),

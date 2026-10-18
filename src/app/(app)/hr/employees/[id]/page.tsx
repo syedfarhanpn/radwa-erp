@@ -25,7 +25,19 @@ import {
 } from "@/domain/hr";
 import { formatMoney } from "@/lib/money";
 import { formatDate, daysUntil } from "@/lib/dates";
+import {
+  LEAVE_STATUS_LABELS,
+  LEAVE_STATUS_TONES,
+  LEAVE_TYPE_LABELS,
+  MOVEMENT_STATUS_LABELS,
+  MOVEMENT_STATUS_TONES,
+  describePosting,
+  dueBackDate,
+  overstayDays,
+} from "@/domain/hrLeave";
 import { setEmployeeStatus, updateEmployee, type EmployeeInput } from "@/services/hrOperations";
+import { leaveFor, movementsFor, serviceSummary } from "@/services/hrLeaveOperations";
+import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
 import { EmployeeForm } from "@/components/hr/EmployeeForm";
 import { Dialog } from "@/components/ui/dialog";
@@ -41,6 +53,117 @@ import {
   PanelBody,
   PanelHeader,
 } from "@/components/ui/primitives";
+
+/**
+ * What has happened to this employee: leave taken, sites moved between.
+ *
+ * Service days are shown alongside because the two drive each other — the
+ * sheet's "cumulative working days" is employment minus time actually away,
+ * and reading one without the other invites the wrong conclusion.
+ */
+function EmployeeHistory({ employeeId }: { employeeId: string }) {
+  const db = useDb();
+  const leaves = leaveFor(db, employeeId);
+  const movements = movementsFor(db, employeeId);
+  const service = serviceSummary(db, employeeId);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Panel>
+        <PanelHeader
+          title="Leave history"
+          description={`${service.leaveDays} leave days taken · ${service.workingDays} working days served`}
+          actions={<LinkButton href="/hr/leave" size="sm" variant="secondary">Leave register</LinkButton>}
+        />
+        <PanelBody className={leaves.length === 0 ? undefined : "p-0"}>
+          {leaves.length === 0 ? (
+            <p className="text-xs text-ink-500">No leave recorded.</p>
+          ) : (
+            <TableWrap>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Reference</TH>
+                    <TH>Type</TH>
+                    <TH>Dates</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {leaves.map((leave) => {
+                    const over = overstayDays(leave);
+                    return (
+                      <TR key={leave.id}>
+                        <TD className="numeric">{leave.reference}</TD>
+                        <TD className="text-2xs">{LEAVE_TYPE_LABELS[leave.leaveType]}</TD>
+                        <TD className="text-2xs">
+                          {formatDate(leave.approvedStartDate ?? leave.requestedStartDate)} →{" "}
+                          {formatDate(dueBackDate(leave) ?? leave.requestedReturnDate)}
+                          {over > 0 ? (
+                            <span className="block text-bad-600">{over} day overstay</span>
+                          ) : null}
+                        </TD>
+                        <TD>
+                          <Badge tone={LEAVE_STATUS_TONES[leave.status]}>
+                            {LEAVE_STATUS_LABELS[leave.status]}
+                          </Badge>
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </TableWrap>
+          )}
+        </PanelBody>
+      </Panel>
+
+      <Panel>
+        <PanelHeader
+          title="Movement history"
+          description="Transfers between work orders and sites."
+          actions={
+            <LinkButton href="/hr/movements" size="sm" variant="secondary">
+              Movement register
+            </LinkButton>
+          }
+        />
+        <PanelBody className={movements.length === 0 ? undefined : "p-0"}>
+          {movements.length === 0 ? (
+            <p className="text-xs text-ink-500">No movements recorded.</p>
+          ) : (
+            <TableWrap>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Reference</TH>
+                    <TH>From</TH>
+                    <TH>To</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {movements.map((movement) => (
+                    <TR key={movement.id}>
+                      <TD className="numeric">{movement.reference}</TD>
+                      <TD className="text-2xs">{describePosting(movement.from)}</TD>
+                      <TD className="text-2xs">{describePosting(movement.to)}</TD>
+                      <TD>
+                        <Badge tone={MOVEMENT_STATUS_TONES[movement.status]}>
+                          {MOVEMENT_STATUS_LABELS[movement.status]}
+                        </Badge>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          )}
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
 
 const ALLOWANCE_LABELS: Record<(typeof ALLOWANCE_FIELDS)[number], string> = {
   foodAllowance: "Food",
@@ -296,6 +419,8 @@ export default function EmployeeDetailPage() {
           </PanelBody>
         </Panel>
       </div>
+
+      <EmployeeHistory employeeId={employee.id} />
 
       <StatusDialog
         key={employee.status}

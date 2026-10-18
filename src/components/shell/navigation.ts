@@ -20,6 +20,8 @@ import {
   Scale,
   Send,
   ShieldCheck,
+  ArrowLeftRight,
+  CalendarClock,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -41,6 +43,7 @@ import {
 } from "@/store/selectors";
 import { currentVersion } from "@/domain/rules";
 import { expiringIqamas } from "@/services/hrOperations";
+import { overdueReturns, pendingLeave, pendingMovements } from "@/services/hrLeaveOperations";
 
 export interface NavItem {
   href: string;
@@ -250,6 +253,25 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Employee Joining",
         icon: UserPlus,
         description: "Register a newly joined employee",
+      },
+      {
+        href: "/hr/leave",
+        roles: ["HR", "MD"],
+        label: "Employee Leave",
+        icon: CalendarClock,
+        primaryFor: ["HR"],
+        // Requests waiting on a decision, plus anyone already overdue back.
+        // Both are things that stop being fixable if nobody looks.
+        badge: (db) => pendingLeave(db).length + overdueReturns(db).length,
+        description: "Requests, approvals, travel and returns",
+      },
+      {
+        href: "/hr/movements",
+        roles: ["HR", "MD"],
+        label: "Employee Movement",
+        icon: ArrowLeftRight,
+        badge: (db) => pendingMovements(db).length,
+        description: "Release requests and site transfers",
       },
     ],
   },

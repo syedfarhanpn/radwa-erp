@@ -240,8 +240,12 @@ function isUsableDb(value: unknown): value is DemoDatabase {
  */
 function backfillCollections(db: DemoDatabase): DemoDatabase {
   db.employees ??= [];
+  db.leaveRequests ??= [];
+  db.employeeMovements ??= [];
   db.sequences ??= {};
   db.sequences.employee ??= 1000;
+  db.sequences.leave ??= 0;
+  db.sequences.movement ??= 0;
 
   // The people and client directories are *reference data owned by the build*,
   // not records anyone created in the app. A document written before a person
