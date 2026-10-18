@@ -15,7 +15,6 @@ import {
   ALLOWANCE_FIELDS,
   EMPLOYEE_CATEGORY_LABELS,
   EMPLOYEE_SPONSOR_LABELS,
-  EMPLOYEE_STATUS_LABELS,
   EXPENSE_CATEGORY_LABELS,
   LEAVE_CONTRACT_PERIOD_LABELS,
   RECRUITMENT_TYPE_LABELS,
@@ -31,12 +30,19 @@ import {
   LEAVE_TYPE_LABELS,
   MOVEMENT_STATUS_LABELS,
   MOVEMENT_STATUS_TONES,
+  PRESENCE_LABELS,
+  PRESENCE_TONES,
   describePosting,
   dueBackDate,
   overstayDays,
 } from "@/domain/hrLeave";
 import { setEmployeeStatus, updateEmployee, type EmployeeInput } from "@/services/hrOperations";
-import { leaveFor, movementsFor, serviceSummary } from "@/services/hrLeaveOperations";
+import {
+  employeePresence,
+  leaveFor,
+  movementsFor,
+  serviceSummary,
+} from "@/services/hrLeaveOperations";
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useActiveRole, useDb, useDemoStore } from "@/store/useDemoStore";
 import { EmployeeForm } from "@/components/hr/EmployeeForm";
@@ -205,6 +211,7 @@ export default function EmployeeDetailPage() {
     ? db.workOrders.find((w) => w.id === employee.assignedWorkOrderId)
     : undefined;
   const iqamaDays = employee.iqamaExpiry ? daysUntil(employee.iqamaExpiry) : null;
+  const presence = employeePresence(db, employee.id);
 
   function saveEdit(input: EmployeeInput) {
     setBusy(true);
@@ -256,9 +263,7 @@ export default function EmployeeDetailPage() {
           </button>
           <h1 className="flex flex-wrap items-center gap-2 text-base font-semibold text-ink-900">
             {employee.name}
-            <Badge tone={employee.status === "ACTIVE" ? "ok" : "neutral"}>
-              {EMPLOYEE_STATUS_LABELS[employee.status]}
-            </Badge>
+            <Badge tone={PRESENCE_TONES[presence.state]}>{PRESENCE_LABELS[presence.state]}</Badge>
           </h1>
           <p className="mt-0.5 text-xs text-ink-500">
             Employee {employee.employeeNumber} · {employee.trade} ·{" "}
@@ -291,6 +296,33 @@ export default function EmployeeDetailPage() {
           </div>
         ) : null}
       </header>
+
+      {presence.state === "ON_LEAVE" || presence.state === "OVERDUE_RETURN" ? (
+        <Callout
+          tone={presence.state === "OVERDUE_RETURN" ? "bad" : "info"}
+          title={presence.state === "OVERDUE_RETURN" ? "Overdue return" : "Currently on leave"}
+        >
+          {presence.leave ? (
+            <>
+              <LinkButton href={`/hr/leave/${presence.leave.id}`}>
+                {presence.leave.reference}
+              </LinkButton>{" "}
+              — due back {formatDate(presence.date)}.
+            </>
+          ) : null}
+        </Callout>
+      ) : presence.state === "LEAVE_APPROVED" ? (
+        <Callout tone="warn" title="Leave approved">
+          {presence.leave ? (
+            <>
+              <LinkButton href={`/hr/leave/${presence.leave.id}`}>
+                {presence.leave.reference}
+              </LinkButton>{" "}
+              starts {formatDate(presence.date)}. Departure has not been recorded yet.
+            </>
+          ) : null}
+        </Callout>
+      ) : null}
 
       {employee.status === "INACTIVE" ? (
         <Callout tone="neutral" title="This employee has left">

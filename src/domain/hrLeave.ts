@@ -205,6 +205,86 @@ export function isLeaveOverdue(leave: LeaveRequest, today: IsoDate): boolean {
   return Boolean(due && today > due);
 }
 
+/* ======================================================== where they are == */
+
+/**
+ * Whether an employee is actually available, derived from their leave records.
+ *
+ * Deliberately NOT a field on the employee. `Employee.status` means employed
+ * or not; being away for three weeks does not stop someone being an employee,
+ * and they are still on the payroll. Storing "on leave" there would mean two
+ * places could disagree about the same fact — approve a leave and forget to
+ * flip the flag, or flip it and never flip it back — and the register would
+ * quietly lie. Computed from the leave records, it cannot drift.
+ */
+export const EMPLOYEE_PRESENCES = [
+  "ACTIVE",
+  "LEAVE_APPROVED",
+  "ON_LEAVE",
+  "OVERDUE_RETURN",
+  "INACTIVE",
+] as const;
+export type EmployeePresence = (typeof EMPLOYEE_PRESENCES)[number];
+
+export const PRESENCE_LABELS: Record<EmployeePresence, string> = {
+  ACTIVE: "Active",
+  LEAVE_APPROVED: "Leave approved",
+  ON_LEAVE: "On leave",
+  OVERDUE_RETURN: "Overdue return",
+  INACTIVE: "Inactive",
+};
+
+export const PRESENCE_TONES: Record<EmployeePresence, HrTone> = {
+  ACTIVE: "ok",
+  LEAVE_APPROVED: "warn",
+  ON_LEAVE: "info",
+  OVERDUE_RETURN: "bad",
+  INACTIVE: "neutral",
+};
+
+export interface PresenceResult {
+  state: EmployeePresence;
+  /** The leave that explains the state, when one does. */
+  leave?: LeaveRequest;
+  /** Start date for an upcoming leave; due-back date for one under way. */
+  date?: IsoDate;
+}
+
+/**
+ * Work out where someone is.
+ *
+ * Order matters: a leave under way beats one merely approved, because an
+ * employee with a second leave booked is still away on the first.
+ */
+export function presenceOf(
+  employmentStatus: "ACTIVE" | "INACTIVE",
+  leaves: readonly LeaveRequest[],
+  today: IsoDate,
+): PresenceResult {
+  if (employmentStatus === "INACTIVE") return { state: "INACTIVE" };
+
+  const away = leaves.find((leave) => leave.status === "DEPARTED");
+  if (away) {
+    return {
+      state: isLeaveOverdue(away, today) ? "OVERDUE_RETURN" : "ON_LEAVE",
+      leave: away,
+      date: dueBackDate(away),
+    };
+  }
+
+  // Approved and still ahead of them — or approved, started, and departure not
+  // yet recorded, which is equally "not at work as far as anyone agreed".
+  const booked = leaves
+    .filter((leave) => leave.status === "APPROVED")
+    .sort((a, b) => (a.approvedStartDate ?? "").localeCompare(b.approvedStartDate ?? ""))[0];
+
+  if (booked) {
+    return { state: "LEAVE_APPROVED", leave: booked, date: booked.approvedStartDate };
+  }
+
+  return { state: "ACTIVE" };
+}
+
 /* ==================================================== employee movement === */
 
 /**

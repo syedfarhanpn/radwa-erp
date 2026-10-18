@@ -16,12 +16,16 @@ import { AlertTriangle, Plus, Users } from "lucide-react";
 import {
   EMPLOYEE_CATEGORY_LABELS,
   EMPLOYEE_SPONSOR_LABELS,
-  EMPLOYEE_STATUS_LABELS,
   grossMonthly,
-  type EmployeeStatus,
 } from "@/domain/hr";
+import {
+  PRESENCE_LABELS,
+  PRESENCE_TONES,
+  presenceOf,
+  type EmployeePresence,
+} from "@/domain/hrLeave";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
-import { formatDate, daysUntil } from "@/lib/dates";
+import { formatDate, daysUntil, todayIso } from "@/lib/dates";
 import { monthlyPayroll } from "@/services/hrOperations";
 import { useActiveRole, useDb } from "@/store/useDemoStore";
 import { Input, Select } from "@/components/ui/form";
@@ -37,6 +41,27 @@ import {
 } from "@/components/ui/primitives";
 import { Table, TableEmptyRow, TableWrap, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 
+/**
+ * The employee's state, with the date that explains it.
+ *
+ * Shown as one badge rather than two columns: "Inactive" and "On leave" are
+ * answers to the same question someone is asking, which is whether this person
+ * is available.
+ */
+function PresenceBadge({ presence }: { presence: ReturnType<typeof presenceOf> }) {
+  return (
+    <>
+      <Badge tone={PRESENCE_TONES[presence.state]}>{PRESENCE_LABELS[presence.state]}</Badge>
+      {presence.date ? (
+        <span className="mt-0.5 block text-2xs text-ink-500">
+          {presence.state === "LEAVE_APPROVED" ? "from " : "due back "}
+          {formatDate(presence.date)}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /** How far ahead an iqama expiry is worth flagging. */
 const IQAMA_WARNING_DAYS = 60;
 
@@ -46,14 +71,28 @@ export default function EmployeeRegisterPage() {
   const router = useRouter();
 
   const [query, setQuery] = React.useState("");
-  const [status, setStatus] = React.useState<EmployeeStatus | "ALL">("ACTIVE");
+  // Filters on where the employee actually is, not only on whether they are
+  // still employed — "who is away right now" is the question HR asks most.
+  const [status, setStatus] = React.useState<EmployeePresence | "ALL" | "EMPLOYED">("EMPLOYED");
+
+  const today = todayIso();
+  const presenceFor = (employeeId: string) =>
+    presenceOf(
+      db.employees.find((e) => e.id === employeeId)!.status,
+      db.leaveRequests.filter((l) => l.employeeId === employeeId),
+      today,
+    );
 
   const canRegister = role === "HR";
 
   const rows = (() => {
     const needle = query.trim().toLowerCase();
     return db.employees
-      .filter((e) => (status === "ALL" ? true : e.status === status))
+      .filter((e) => {
+        if (status === "ALL") return true;
+        if (status === "EMPLOYED") return e.status === "ACTIVE";
+        return presenceFor(e.id).state === status;
+      })
       .filter((e) => {
         if (!needle) return true;
         return [e.name, e.employeeNumber, e.trade, e.nationality, e.passportNumber, e.iqamaNumber]
@@ -97,9 +136,15 @@ export default function EmployeeRegisterPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Active employees" value={String(active.length)} icon={<Users aria-hidden />} />
         <StatTile
-          label="Inactive"
-          value={String(db.employees.length - active.length)}
-          hint="Left the company; records kept"
+          label="Away"
+          value={String(
+            active.filter((e) => {
+              const state = presenceFor(e.id).state;
+              return state === "ON_LEAVE" || state === "OVERDUE_RETURN";
+            }).length,
+          )}
+          hint="On leave right now"
+          href="/hr/leave"
         />
         <StatTile
           label="Monthly payroll"
@@ -150,10 +195,16 @@ export default function EmployeeRegisterPage() {
               <Select
                 aria-label="Filter by status"
                 value={status}
-                onChange={(event) => setStatus(event.target.value as EmployeeStatus | "ALL")}
-                className="w-full sm:w-36"
+                onChange={(event) =>
+                  setStatus(event.target.value as EmployeePresence | "ALL" | "EMPLOYED")
+                }
+                className="w-full sm:w-44"
               >
-                <option value="ACTIVE">Active</option>
+                <option value="EMPLOYED">Employed</option>
+                <option value="ACTIVE">At work</option>
+                <option value="ON_LEAVE">On leave</option>
+                <option value="LEAVE_APPROVED">Leave approved</option>
+                <option value="OVERDUE_RETURN">Overdue return</option>
                 <option value="INACTIVE">Inactive</option>
                 <option value="ALL">All</option>
               </Select>
@@ -210,9 +261,7 @@ export default function EmployeeRegisterPage() {
                           {formatMoney(grossMonthly(employee.compensation), "SAR", 0)}
                         </TD>
                         <TD>
-                          <Badge tone={employee.status === "ACTIVE" ? "ok" : "neutral"}>
-                            {EMPLOYEE_STATUS_LABELS[employee.status]}
-                          </Badge>
+                          <PresenceBadge presence={presenceFor(employee.id)} />
                         </TD>
                       </TR>
                     ))

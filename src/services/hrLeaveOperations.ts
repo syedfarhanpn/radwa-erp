@@ -21,6 +21,7 @@ import {
   isAssignmentOverdue,
   isLeaveOverdue,
   overstayDays,
+  presenceOf,
   type ArrivalStatus,
   type EmployeeMovement,
   type LeaveRequest,
@@ -28,6 +29,7 @@ import {
   type LeaveType,
   type MovementStatus,
   type Posting,
+  type PresenceResult,
   type ReleaseReason,
   type TicketPayee,
   type TransportMode,
@@ -705,6 +707,26 @@ export function cancelMovement(db: DemoDatabase, ctx: OpContext, input: { moveme
 }
 
 /* ============================================================ selectors === */
+
+/**
+ * Where this employee is, from their leave records.
+ *
+ * The register and the detail page both read this, so one answer is given in
+ * one place rather than each screen deciding for itself what "on leave" means.
+ */
+export function employeePresence(
+  db: DemoDatabase,
+  employeeId: Id,
+  today: IsoToday = todayIso(),
+): PresenceResult {
+  const employee = db.employees.find((e) => e.id === employeeId);
+  if (!employee) return { state: "INACTIVE" };
+  return presenceOf(
+    employee.status,
+    db.leaveRequests.filter((l) => l.employeeId === employeeId),
+    today,
+  );
+}
 
 export function leaveFor(db: DemoDatabase, employeeId: Id): LeaveRequest[] {
   return db.leaveRequests
