@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: `${brand.companyName} — ${brand.tagline}`,
+  title: brand.documentTitle,
   description:
     "Construction enquiry, tender management and work-order preparation system.",
 };

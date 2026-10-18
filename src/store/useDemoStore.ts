@@ -28,7 +28,7 @@ import * as React from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-import { DEMO_ROLES, type DemoRole } from "@/domain/enums";
+import { DEMO_ROLES, ROLE_LABELS, type DemoRole } from "@/domain/enums";
 import { validateManagementTeam } from "@/domain/rules";
 import type { ActionResult, DemoDatabase, Id, User } from "@/domain/types";
 import { createSeedDatabase, SCHEMA_VERSION } from "@/data/seed";
@@ -44,7 +44,7 @@ import {
   pushWorkspace,
   subscribeToWorkspace,
 } from "@/lib/supabase/workspace";
-import { USER_IDS } from "@/data/people";
+import { DEMO_CLIENTS, DEMO_CONTACTS, DEMO_USERS, USER_IDS } from "@/data/people";
 import { recomputeAllStages, type OpContext } from "@/services/operations";
 import { scopeDatabaseForViewer } from "./visibility";
 
@@ -242,7 +242,34 @@ function backfillCollections(db: DemoDatabase): DemoDatabase {
   db.employees ??= [];
   db.sequences ??= {};
   db.sequences.employee ??= 1000;
+
+  // The people and client directories are *reference data owned by the build*,
+  // not records anyone created in the app. A document written before a person
+  // was added to `src/data/people.ts` is missing them, and the shared document
+  // outlives any single deploy — so every load reconciles the directory with
+  // the seed.
+  //
+  // This is not hypothetical tidiness. Adding the HR Manager to the seed left
+  // her absent from the shared document, so signing in as her resolved to no
+  // user at all and the topbar showed the first person in the list instead.
+  //
+  // Missing entries are added; existing ones are left alone and nothing is
+  // ever removed, because older records still point at people and clients by
+  // id and orphaning those would be worse than carrying a stale row.
+  addMissingById(db.users, DEMO_USERS);
+  addMissingById(db.clients, DEMO_CLIENTS);
+  addMissingById(db.contacts, DEMO_CONTACTS);
+
   return db;
+}
+
+/** Append any seed entries the collection does not already have, by id. */
+function addMissingById<T extends { id: Id }>(existing: T[] | undefined, seed: readonly T[]): void {
+  if (!existing) return;
+  const present = new Set(existing.map((row) => row.id));
+  for (const row of seed) {
+    if (!present.has(row.id)) existing.push({ ...row });
+  }
 }
 
 export const useDemoStore = create<DemoState>()(
@@ -854,10 +881,33 @@ export function useActiveRole(): DemoRole {
   return useDemoStore((s) => s.activeRole);
 }
 
+/**
+ * The person currently acting.
+ *
+ * When the id resolves to nobody, this returns a clearly-unknown placeholder
+ * rather than the first person in the directory. Falling back to `users[0]`
+ * meant a missing record silently displayed someone else's name and initials
+ * in the topbar — the signed-in HR Manager appeared as the MD, which is a
+ * worse failure than an obviously empty one, because nothing looks wrong.
+ *
+ * With the directory reconciled on load (see `backfillCollections`) this
+ * should not happen; it is here so that if it does, it is visible.
+ */
 export function useActingUser(): User {
   const db = useDemoStore((s) => s.db);
   const actingUserId = useDemoStore((s) => s.actingUserId);
-  return db.users.find((u) => u.id === actingUserId) ?? db.users[0];
+  const role = useDemoStore((s) => s.activeRole);
+  const found = db.users.find((u) => u.id === actingUserId);
+  if (found) return found;
+
+  return {
+    id: actingUserId,
+    name: "Unknown user",
+    initials: "??",
+    jobTitle: ROLE_LABELS[role],
+    email: "",
+    roles: [role],
+  };
 }
 
 /** Everyone who can act as the given role, for the in-role person picker. */

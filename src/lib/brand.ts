@@ -13,6 +13,8 @@ export const brand = {
   shortName: "Radwa Gulf",
   /** What this system does, shown under the logo. */
   tagline: "Tender & Work Order Management",
+  /** Browser tab and bookmark title. Short, because tabs are narrow. */
+  documentTitle: "Radwa Gulf & Co ERP",
   /** Line under the logo on printed documents — matches the logo artwork. */
   documentSubtitle: "Engineering & Construction",
   logo: {
