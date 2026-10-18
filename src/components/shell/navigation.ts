@@ -57,6 +57,13 @@ export interface NavItem {
    * exclusions. Omitted means every role.
    */
   roles?: DemoRole[];
+  /**
+   * Keep the item out of the sidebar without taking it out of the access
+   * matrix. A page reached from a button rather than the nav still needs its
+   * `roles` honoured on direct URL access, and deleting the entry would make
+   * `canAccessPath` fall through to "allowed" for everyone.
+   */
+  hiddenInSidebar?: boolean;
   badge?: (db: DemoDatabase, role: DemoRole, actingUserId: Id) => number;
   description?: string;
 }
@@ -248,6 +255,9 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Joining records, pay and contract details",
       },
       {
+        // Reached from the "Register joining" button on the employee register,
+        // not from the sidebar — one entry point, as with enquiry registration.
+        hiddenInSidebar: true,
         href: "/hr/employees/new",
         roles: ["HR"],
         label: "Employee Joining",

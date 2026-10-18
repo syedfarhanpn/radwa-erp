@@ -115,7 +115,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="thin-scroll flex-1 overflow-y-auto px-2 py-3" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => {
-          const visible = group.items.filter((item) => canRoleAccess(item, role));
+          const visible = group.items.filter(
+            (item) => canRoleAccess(item, role) && !item.hiddenInSidebar,
+          );
           if (visible.length === 0) return null;
 
           return (
